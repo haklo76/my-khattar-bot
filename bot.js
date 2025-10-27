@@ -82,7 +82,7 @@ async function askGemini(question, history = []) {
         return { answer: "❌ Gemini API Key မရှိပါ။", history };
     }
 
-    // Stable v1 API နှင့် gemini-2.0-flash ကို သုံးပါ
+    // === FIX: Stable v1 API နှင့် gemini-2.0-flash ကို သုံးပါ ===
     const MODEL_NAME = 'gemini-2.0-flash';
     const API_URL = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
     
@@ -203,7 +203,7 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
     if (!prompt) return ctx.reply("🖼️ Usage: /img [prompt]");
 
     const msg = await ctx.reply(`🎨 Generating image... This may take 1–2 minutes.`);
-    await ctx.sendChatAction('upload_photo'); // 'upload_photo' action ပြပါ
+    await ctx.sendChatAction('upload_photo'); 
     
     const result = await generateHuggingFaceImage(prompt);
 
