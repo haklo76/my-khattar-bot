@@ -1,4 +1,4 @@
-const { Telegraf, session } = require('telegraf'); // === IMPROVEMENT: 'session' ကို ထည့်သွင်းပါ ===
+const { Telegraf, session } = require('telegraf'); // 'session' ကို ထည့်သွင်းပါ
 const express = require('express');
 const axios = require('axios');
 
@@ -29,8 +29,6 @@ const bot = new Telegraf(BOT_TOKEN);
 const ROSES = ["🌹", "💐", "🌸", "💮", "🏵️", "🌺", "🌷", "🥀"];
 
 // === IMPROVEMENT: Chat History သိမ်းဖို့ Session Middleware ကို သုံးပါ ===
-// Session ကို memory မှာပဲ ခေတ္တသိမ်းပါမယ်။ Bot restart ဖြစ်ရင် ပျောက်ပါမယ်။
-// (Production အတွက်ဆို @telegraf/session-redis လိုမျိုးသုံးသင့်ပါတယ်)
 bot.use(session({
     defaultSession: () => ({
         history: [] // Gemini chat history အတွက်
@@ -78,15 +76,15 @@ function adminRequired(func) {
     };
 }
 
-// ==================== GEMINI AI (IMPROVED FOR CHAT) ====================
+// ==================== GEMINI AI (FIXED & IMPROVED) ====================
 async function askGemini(question, history = []) {
     if (!GEMINI_API_KEY) {
         return { answer: "❌ Gemini API Key မရှိပါ။", history };
     }
 
-    // === IMPROVEMENT: v1beta endpoint ကိုသုံးပြီး chat history ('contents') နဲ့ system instruction ကို ထည့်ပါ ===
-    // (Model ကို 'gemini-1.5-flash' လို့ ပြောင်းသုံးထားပါတယ်၊ ဒါက chat history အတွက် ပိုသင့်တော်ပါတယ်)
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // === FIX: Model name ကို 'gemini-1.5-flash-latest' လို့ ပြောင်းပါ ===
+    const MODEL_NAME = 'gemini-1.5-flash-latest';
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
     
     // မေးခွန်းအသစ်ကို history ထဲ ထည့်ပါ
     const newContents = [
@@ -114,7 +112,7 @@ async function askGemini(question, history = []) {
 
         const newAnswer = res.data.candidates?.[0]?.content?.parts?.[0]?.text || "🤖 No response.";
 
-        // === IMPROVEMENT: History ကို update လုပ်ပါ ===
+        // History ကို update လုပ်ပါ
         const updatedHistory = [
             ...newContents, // User မေးခွန်း
             { role: "model", parts: [{ text: newAnswer }] } // Bot အဖြေ
@@ -136,9 +134,9 @@ async function askGemini(question, history = []) {
 }
 
 // ==================== HUGGING FACE IMAGE ====================
-// (This function is already good, no changes needed)
 async function generateHuggingFaceImage(prompt) {
     if (!HUGGINGFACE_API_KEY) return null;
+
     try {
         const res = await axios.post(
             'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
@@ -275,9 +273,9 @@ bot.command('del', adminRequired(async (ctx) => {
 }));
 
 // ==================== AUTO REPLY ====================
-// (This section is fine)
 bot.on('text', async (ctx) => {
-    if (isAuthorizedAIUser(ctx)) return; // AI user ဆိုရင် auto-reply မလုပ်ပါ
+    // === IMPROVEMENT: AI owner ဆိုရင် auto-reply မလုပ်ပါ ===
+    if (isAuthorizedAIUser(ctx)) return; 
     
     const t = ctx.message.text.toLowerCase();
     if (t.startsWith('/')) return;
@@ -290,11 +288,11 @@ bot.on('text', async (ctx) => {
 });
 
 // ==================== WEB SERVER ====================
-// (This section is fine)
 app.get('/', (req, res) => {
     res.json({
         status: "✅ Rose AI Bot Active",
         owners: AUTHORIZED_USER_IDS,
+        // === IMPROVEMENT: Feature list ကို update လုပ်ပါ ===
         features: ["AI Chat (with Context)", "Image Generation", "Group Moderation"],
         timestamp: new Date().toISOString()
     });
@@ -310,7 +308,6 @@ app.get('/health', (req, res) => {
 });
 
 // ==================== BOT START ====================
-// (This section is fine)
 bot.catch((err, ctx) => console.error(`Bot error (${ctx.updateType}):`, err.message));
 
 const startBot = async (retry = 0) => {
