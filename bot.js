@@ -5,17 +5,33 @@ const axios = require('axios');
 const app = express();
 app.use(express.json());
 
-// Environment variables
+// Environment variables - Koyeb will provide these
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY; // အသစ်ထပ်ထည့်
+const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
 const AUTHORIZED_USER_ID = process.env.AUTHORIZED_USER_ID;
 const PORT = process.env.PORT || 8000;
 
-// Validate required environment variables
-if (!BOT_TOKEN || !AUTHORIZED_USER_ID) {
-    console.error('❌ BOT_TOKEN and AUTHORIZED_USER_ID are required');
+// Validate only the absolutely required variables
+if (!BOT_TOKEN) {
+    console.error('❌ BOT_TOKEN is required');
+    console.log('💡 Get it from: @BotFather on Telegram');
     process.exit(1);
+}
+
+if (!AUTHORIZED_USER_ID) {
+    console.error('❌ AUTHORIZED_USER_ID is required');
+    console.log('💡 Get your ID from: @userinfobot on Telegram');
+    process.exit(1);
+}
+
+// Optional APIs - just warn but don't exit
+if (!GEMINI_API_KEY) {
+    console.log('⚠️  GEMINI_API_KEY not set - AI features disabled');
+}
+
+if (!HUGGINGFACE_API_KEY) {
+    console.log('⚠️  HUGGINGFACE_API_KEY not set - Image generation disabled');
 }
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -58,11 +74,10 @@ async function askGemini(question) {
 // ==================== HUGGING FACE IMAGE GENERATION ====================
 async function generateHuggingFaceImage(prompt) {
     if (!HUGGINGFACE_API_KEY) {
-        return "❌ Hugging Face API Key မရှိသေးပါ။";
+        return null;
     }
 
     try {
-        // Stable Diffusion model သုံးမယ်
         const response = await axios.post(
             'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
             { inputs: prompt },
@@ -76,10 +91,7 @@ async function generateHuggingFaceImage(prompt) {
             }
         );
 
-        // Image buffer ကို base64 conversion
-        const imageBuffer = Buffer.from(response.data);
-        return imageBuffer;
-
+        return Buffer.from(response.data);
     } catch (error) {
         console.error('Hugging Face Error:', error.response?.data || error.message);
         return null;
@@ -96,8 +108,8 @@ ${randomRose} *Your Personal Rose AI Bot* ${randomRose}
 
 🤖 **AI Commands:**
 /ai [question] - Ask me anything
-/image [prompt] - Generate image (Gemini)
-/hfimage [prompt] - Generate real image (Hugging Face)
+/image [prompt] - Generate image description
+/hfimage [prompt] - Generate real image 🆕
 
 🛡️ **Group Admin:**
 /mute, /ban, /warn, /del
@@ -138,6 +150,11 @@ bot.command('image', aiAuthorizedRequired(async (ctx) => {
         return;
     }
     
+    if (!GEMINI_API_KEY) {
+        await ctx.reply("❌ Gemini API Key မရှိသေးပါ။");
+        return;
+    }
+    
     try {
         const url = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
         const payload = {
@@ -157,6 +174,11 @@ bot.command('hfimage', aiAuthorizedRequired(async (ctx) => {
     const prompt = ctx.message.text.split(' ').slice(1).join(' ');
     if (!prompt) {
         await ctx.reply("🖼️ Usage: /hfimage [prompt]");
+        return;
+    }
+
+    if (!HUGGINGFACE_API_KEY) {
+        await ctx.reply("❌ Hugging Face API Key မရှိသေးပါ။");
         return;
     }
 
@@ -182,7 +204,81 @@ bot.command('hfimage', aiAuthorizedRequired(async (ctx) => {
     }
 }));
 
-// ... (Admin commands remain the same)
+// Admin Commands (same as before)
+bot.command('mute', async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user to mute them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    try {
+        await ctx.restrictChatMember(user.id, {
+            can_send_messages: false,
+            until_date: Math.floor(Date.now() / 1000) + 3600
+        });
+        await ctx.reply(`🔇 Muted ${user.first_name} for 1 hour ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    } catch (error) {
+        await ctx.reply(`❌ Mute failed: ${error.message}`);
+    }
+});
+
+bot.command('ban', async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user to ban them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    try {
+        await ctx.banChatMember(user.id);
+        await ctx.reply(`🔨 Banned ${user.first_name} ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    } catch (error) {
+        await ctx.reply(`❌ Ban failed: ${error.message}`);
+    }
+});
+
+bot.command('del', async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a message to delete it.");
+        return;
+    }
+    
+    try {
+        await ctx.deleteMessage(ctx.message.reply_to_message.message_id);
+        await ctx.reply(`🗑️ Deleted ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    } catch (error) {
+        await ctx.reply(`❌ Delete failed: ${error.message}`);
+    }
+});
+
+bot.command('warn', async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user to warn them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    await ctx.reply(`⚠️ ${user.first_name}, please follow group rules! ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+});
+
+// Auto Replies
+bot.on('text', async (ctx) => {
+    if (!ctx.message.text.startsWith('/')) {
+        const text = ctx.message.text.toLowerCase();
+        const randomRose = ROSES[Math.floor(Math.random() * ROSES.length)];
+        
+        if (text.includes('hello') || text.includes('hi')) {
+            await ctx.reply(`${randomRose} Hello!`);
+        } else if (text.includes('thank')) {
+            await ctx.reply(`${randomRose} You're welcome!`);
+        } else if (text.includes('good morning')) {
+            await ctx.reply(`🌅 Good morning! ${randomRose}`);
+        } else if (text.includes('good night')) {
+            await ctx.reply(`🌙 Good night! ${randomRose}`);
+        }
+    }
+});
 
 // Web Server
 app.get('/', (req, res) => {
@@ -193,11 +289,21 @@ app.get('/', (req, res) => {
     });
 });
 
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// Error Handling
+bot.catch((err, ctx) => {
+    console.error(`Bot error:`, err);
+});
+
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rose AI Bot starting...`);
     console.log(`📍 Port: ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
+    console.log(`🤖 Gemini AI: ${GEMINI_API_KEY ? '✅ Enabled' : '❌ Disabled'}`);
     console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ Enabled' : '❌ Disabled'}`);
     
     bot.launch().then(() => {
