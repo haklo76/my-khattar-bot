@@ -72,7 +72,6 @@ async function askGemini(question) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
-        // Use the available model from the debug output
         const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
             {
@@ -303,26 +302,15 @@ bot.catch((err, ctx) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
-    console.log(`🤖 Gemini: ${GEMINI_API_KEY ? '✅ gemini-2.0-flash' : '❌'}`);
+    console.log(`🤖 Gemini: ✅ gemini-2.0-flash`);
     console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅' : '❌'}`);
     
-    // Use webhook to avoid multiple instances conflict
-    bot.launch({ 
-        webhook: {
-            domain: process.env.KOYEB_APP_URL, // Koyeb provides this
-            port: PORT
-        }
-    }).then(() => {
-        console.log('✅ Bot is now running with webhook!');
+    // Simple polling - no webhook configuration
+    bot.launch().then(() => {
+        console.log('✅ Bot is now running with polling!');
     }).catch(error => {
         console.error('❌ Bot failed to start:', error);
-        // Try polling as fallback
-        bot.launch().then(() => {
-            console.log('✅ Bot is now running with polling!');
-        }).catch(pollingError => {
-            console.error('❌ Bot failed with polling too:', pollingError);
-            process.exit(1);
-        });
+        process.exit(1);
     });
 });
 
