@@ -18,7 +18,7 @@ if (!BOT_TOKEN || !AUTHORIZED_USER_ID) {
     process.exit(1);
 }
 
-console.log('🚀 Starting Rose AI Bot...');
+console.log('🚀 Starting Rose AI Bot with Admin features...');
 
 const bot = new Telegraf(BOT_TOKEN);
 const ROSES = ["🌹", "💐", "🌸", "💮", "🏵️", "🌺", "🌷", "🥀"];
@@ -38,30 +38,64 @@ function aiAuthorizedRequired(func) {
     };
 }
 
+// ==================== ADMIN SYSTEM ====================
+async function isAdmin(ctx) {
+    try {
+        if (ctx.chat.type === 'private') return false;
+        
+        const member = await ctx.getChatMember(ctx.from.id);
+        return member.status === "administrator" || member.status === "creator";
+    } catch (error) {
+        console.error('Admin check error:', error);
+        return false;
+    }
+}
+
+function adminRequired(func) {
+    return async (ctx) => {
+        if (ctx.chat.type === "private") {
+            await ctx.reply("❌ This command only works in groups.");
+            return;
+        }
+        
+        const userIsAdmin = await isAdmin(ctx);
+        if (!userIsAdmin) {
+            await ctx.reply("❌ Admins only!");
+            return;
+        }
+        return func(ctx);
+    };
+}
+
 // ==================== GEMINI AI SYSTEM ====================
 async function askGemini(question) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
-        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
-        const payload = {
-            contents: [{
-                parts: [{ text: `မြန်မာလိုရင်းနှီးစွာ ဖြေပါ။\n\nQuestion: ${question}` }]
-            }]
-        };
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                contents: [{
+                    parts: [{ text: `မြန်မာလိုရင်းနှီးစွာ ဖြေပါ: ${question}` }]
+                }]
+            },
+            {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 30000
+            }
+        );
 
-        const response = await axios.post(url, payload, { timeout: 30000 });
         return response.data.candidates[0].content.parts[0].text;
+        
     } catch (error) {
-        return `❌ Error: ${error.message}`;
+        console.error('Gemini Error:', error.response?.data || error.message);
+        return `❌ Error: ${error.response?.data?.error?.message || error.message}`;
     }
 }
 
 // ==================== HUGGING FACE IMAGE GENERATION ====================
 async function generateHuggingFaceImage(prompt) {
-    if (!HUGGINGFACE_API_KEY) {
-        return null;
-    }
+    if (!HUGGINGFACE_API_KEY) return null;
 
     try {
         const response = await axios.post(
@@ -90,39 +124,50 @@ bot.command('start', async (ctx) => {
     
     if (isAuthorizedAIUser(ctx)) {
         const msg = `
-${randomRose} *Your Personal Rose AI Bot* ${randomRose}
+${randomRose} *Your Personal Rose AI & Admin Bot* ${randomRose}
 
-🤖 **AI Commands:**
+🤖 **AI Commands (Private Only):**
 /ai [question] - Ask me anything
-/image [prompt] - Generate image description
-/hfimage [prompt] - Generate real image 🆕
+/hfimage [prompt] - Generate real image
 
-🛡️ **Group Admin:**
-/mute, /ban, /warn, /del
+🛡️ **Group Admin Commands:**
+/mute - Mute user (reply to user)
+/ban - Ban user (reply to user)  
+/warn - Warn user (reply to user)
+/del - Delete message (reply to message)
 
 📍 Hosted on Koyeb • Free Tier
 `;
         await ctx.reply(msg, { parse_mode: "Markdown" });
     } else {
-        await ctx.reply(`${randomRose} Hello! I'm a personal AI assistant.`);
+        await ctx.reply(
+            `${randomRose} *Hello!* I'm Rose Bot.\n\n` +
+            `🛡️ Add me to groups as admin for moderation.\n` +
+            `❌ AI features are private to the owner.`,
+            { parse_mode: "Markdown" }
+        );
     }
 });
 
-// AI Commands
+// ==================== AI COMMANDS ====================
 bot.command('ai', aiAuthorizedRequired(async (ctx) => {
     const question = ctx.message.text.split(' ').slice(1).join(' ');
-    if (!question) return await ctx.reply("🧠 Usage: /ai [question]");
+    if (!question) return await ctx.reply("🧠 Usage: /ai [your question]");
     
     const thinkingMsg = await ctx.reply(`🧠 Thinking... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
-    const answer = await askGemini(question);
     
-    await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        thinkingMsg.message_id,
-        null,
-        `🤖 *Answer:*\n\n${answer}`,
-        { parse_mode: "Markdown" }
-    );
+    try {
+        const answer = await askGemini(question);
+        await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            thinkingMsg.message_id,
+            null,
+            `🤖 *Answer:*\n\n${answer}`,
+            { parse_mode: "Markdown" }
+        );
+    } catch (error) {
+        await ctx.reply(`❌ Error: ${error.message}`);
+    }
 }));
 
 bot.command('hfimage', aiAuthorizedRequired(async (ctx) => {
@@ -142,7 +187,7 @@ bot.command('hfimage', aiAuthorizedRequired(async (ctx) => {
             await ctx.deleteMessage(processingMsg.message_id);
         } else {
             await ctx.editMessageText(
-                `❌ Image generation failed.`,
+                `❌ Image generation failed or API key not set.`,
                 { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
             );
         }
@@ -151,24 +196,113 @@ bot.command('hfimage', aiAuthorizedRequired(async (ctx) => {
     }
 }));
 
-// Admin Commands (simplified)
-bot.command('mute', async (ctx) => {
-    if (!ctx.message.reply_to_message) return await ctx.reply("❌ Reply to a user to mute.");
-    // ... rest of admin commands
+// ==================== ADMIN COMMANDS ====================
+bot.command('mute', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user's message to mute them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    try {
+        const untilDate = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+        await ctx.restrictChatMember(user.id, {
+            can_send_messages: false,
+            until_date: untilDate
+        });
+        await ctx.reply(`🔇 Muted ${user.first_name} for 1 hour ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    } catch (error) {
+        await ctx.reply(`❌ Mute failed: ${error.message}`);
+    }
+}));
+
+bot.command('ban', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user's message to ban them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    try {
+        await ctx.banChatMember(user.id);
+        await ctx.reply(`🔨 Banned ${user.first_name} ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    } catch (error) {
+        await ctx.reply(`❌ Ban failed: ${error.message}`);
+    }
+}));
+
+bot.command('del', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a message to delete it.");
+        return;
+    }
+    
+    try {
+        await ctx.deleteMessage(ctx.message.reply_to_message.message_id);
+        // Don't send confirmation message to avoid spam
+    } catch (error) {
+        await ctx.reply(`❌ Delete failed: ${error.message}`);
+    }
+}));
+
+bot.command('warn', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user to warn them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    await ctx.reply(`⚠️ ${user.first_name}, please follow group rules! ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+}));
+
+// ==================== AUTO REPLIES ====================
+bot.on('text', async (ctx) => {
+    if (!ctx.message.text.startsWith('/')) {
+        const text = ctx.message.text.toLowerCase();
+        const randomRose = ROSES[Math.floor(Math.random() * ROSES.length)];
+        
+        if (text.includes('hello') || text.includes('hi')) {
+            await ctx.reply(`${randomRose} Hello!`);
+        } else if (text.includes('thank')) {
+            await ctx.reply(`${randomRose} You're welcome!`);
+        } else if (text.includes('good morning')) {
+            await ctx.reply(`🌅 Good morning! ${randomRose}`);
+        } else if (text.includes('good night')) {
+            await ctx.reply(`🌙 Good night! ${randomRose}`);
+        }
+    }
 });
 
-// Web Server & Start
+// ==================== WEB SERVER ====================
 app.get('/', (req, res) => {
-    res.json({ status: '🌹 Bot Active', timestamp: new Date().toISOString() });
+    res.json({
+        status: '🌹 Rose AI & Admin Bot - Active',
+        features: ['AI Chat', 'Image Generation', 'Group Moderation'],
+        timestamp: new Date().toISOString()
+    });
 });
 
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// ==================== ERROR HANDLING ====================
+bot.catch((err, ctx) => {
+    console.error(`Bot error for ${ctx.updateType}:`, err);
+});
+
+// ==================== START SERVER ====================
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
+    console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
+    console.log(`🤖 Gemini AI: ${GEMINI_API_KEY ? '✅' : '❌'}`);
+    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅' : '❌'}`);
     
     bot.launch().then(() => {
         console.log('✅ Bot is now running!');
     }).catch(error => {
-        console.error('❌ Bot failed:', error);
+        console.error('❌ Bot failed to start:', error);
+        process.exit(1);
     });
 });
 
