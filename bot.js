@@ -75,32 +75,29 @@ async function askGemini(question, conversationHistory = []) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
-        // Female AI personality setup - CORRECTED FORMAT
-        const systemInstruction = {
-            parts: [{ 
-                text: `You are Rose, a friendly and helpful female AI assistant. You speak in a warm, kind, and feminine tone. 
-                Respond in Burmese language naturally and conversationally. Be empathetic, supportive, and use feminine expressions appropriately.
-                Keep your responses concise and friendly.` 
-            }]
-        };
+        // Combine system prompt with conversation history
+        let fullPrompt = `You are Rose, a friendly and helpful female AI assistant. You speak in a warm, kind, and feminine tone. 
+Respond in Burmese language naturally and conversationally. Be empathetic, supportive, and use feminine expressions appropriately.\n\n`;
 
-        // Build messages in correct Gemini format
-        const contents = [
-            ...conversationHistory,
-            {
-                role: "user",
-                parts: [{ text: question }]
+        // Add conversation history
+        conversationHistory.forEach(msg => {
+            if (msg.role === "user") {
+                fullPrompt += `User: ${msg.parts[0].text}\n`;
+            } else if (msg.role === "model") {
+                fullPrompt += `Rose: ${msg.parts[0].text}\n`;
             }
-        ];
+        });
 
-        const requestBody = {
-            contents: contents,
-            systemInstruction: systemInstruction
-        };
+        // Add current question
+        fullPrompt += `User: ${question}\nRose:`;
 
         const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-            requestBody,
+            {
+                contents: [{
+                    parts: [{ text: fullPrompt }]
+                }]
+            },
             {
                 headers: { 'Content-Type': 'application/json' },
                 timeout: 30000
