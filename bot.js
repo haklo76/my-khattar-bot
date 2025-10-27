@@ -70,14 +70,16 @@ function adminRequired(func) {
     };
 }
 
-// ==================== GEMINI AI SYSTEM (FEMALE) ====================
+// ==================== GEMINI AI SYSTEM (MATURE LADY) ====================
 async function askGemini(question, conversationHistory = []) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
-        // Combine system prompt with conversation history
-        let fullPrompt = `You are Rose, a friendly and helpful female AI assistant. You speak in a warm, kind, and feminine tone. 
-Respond in Burmese language naturally and conversationally. Be empathetic, supportive, and use feminine expressions appropriately.\n\n`;
+        // Mature Lady AI personality setup
+        let fullPrompt = `You are Rose, a mature, elegant, and sophisticated lady AI assistant. You carry yourself with grace, wisdom, and dignity.
+Your tone is refined, composed, and nurturing. You speak in Burmese language with the elegance of a well-educated lady.
+You are patient, understanding, and provide thoughtful advice with maternal warmth and intelligence.
+You value deep conversations and meaningful connections. Respond with the poise of an experienced woman who has seen much of life.\n\n`;
 
         // Add conversation history
         conversationHistory.forEach(msg => {
@@ -223,7 +225,7 @@ bot.command('ai', aiAuthorizedRequired(async (ctx) => {
     const session = switchToGeminiMode(ctx.from.id);
     
     await ctx.reply(
-        `👩‍💻 *Switched to Gemini AI Chat Mode* ${ROSES[Math.floor(Math.random() * ROSES.length)]}\n\n` +
+        `👩‍💼 *Switched to Gemini AI Chat Mode* ${ROSES[Math.floor(Math.random() * ROSES.length)]}\n\n` +
         `Now you can chat with me directly without any commands!`,
         { parse_mode: "Markdown" }
     );
@@ -241,7 +243,7 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
 }));
 
 // ==================== AUTO RESPONSE BASED ON CURRENT MODE ====================
-bot.on('text', aiAuthorizedRequired(async (ctx) => {
+bot.on('text', async (ctx) => {
     const message = ctx.message.text;
     
     // Skip if it's a command
@@ -249,82 +251,145 @@ bot.on('text', aiAuthorizedRequired(async (ctx) => {
         return;
     }
 
-    const userId = ctx.from.id;
-    const session = getUserSession(userId);
-    
-    if (session.mode === 'image') {
-        // IMAGE GENERATION MODE
-        if (!HUGGINGFACE_API_KEY) {
-            await ctx.reply("❌ Image generation is currently unavailable.");
+    // Private chat - AI features for authorized user only
+    if (ctx.chat.type === 'private') {
+        if (!isAuthorizedAIUser(ctx)) {
+            await ctx.reply("❌ *This is a personal AI bot.*", { parse_mode: "Markdown" });
             return;
         }
 
-        const processingMsg = await ctx.reply(`🎨 Generating image: "${message}"\n${ROSES[Math.floor(Math.random() * ROSES.length)]} This may take 1-2 minutes...`);
+        const userId = ctx.from.id;
+        const session = getUserSession(userId);
         
-        try {
-            const result = await generateHuggingFaceImage(message);
-            
-            if (result === 'loading') {
-                await ctx.editMessageText(
-                    `⏳ Model is loading...\nPlease try again in 2-3 minutes.`,
-                    { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                );
-            } else if (result === 'timeout') {
-                await ctx.editMessageText(
-                    `⏰ Image generation took too long.\nPlease try again with a simpler prompt.`,
-                    { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                );
-            } else if (result instanceof Buffer) {
-                await ctx.replyWithPhoto(
-                    { source: result },
-                    { caption: `🎨 Generated: "${message}"` }
-                );
-                await ctx.deleteMessage(processingMsg.message_id);
-            } else {
-                await ctx.editMessageText(
-                    `❌ Image generation failed. Try using simpler English prompts.`,
-                    { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                );
+        if (session.mode === 'image') {
+            // IMAGE GENERATION MODE
+            if (!HUGGINGFACE_API_KEY) {
+                await ctx.reply("❌ Image generation is currently unavailable.");
+                return;
             }
-        } catch (error) {
-            await ctx.reply(`❌ Error: ${error.message}`);
-        }
-    } else {
-        // GEMINI AI CHAT MODE
-        const thinkingMsg = await ctx.reply(`💭 Rose is thinking... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
-        
-        try {
-            const answer = await askGemini(message, session.conversationHistory);
+
+            const processingMsg = await ctx.reply(`🎨 Generating image: "${message}"\n${ROSES[Math.floor(Math.random() * ROSES.length)]} This may take 1-2 minutes...`);
             
-            // Update conversation history with CORRECT Gemini format
-            session.conversationHistory.push(
-                { 
-                    role: "user", 
-                    parts: [{ text: message }] 
-                },
-                { 
-                    role: "model", 
-                    parts: [{ text: answer }] 
+            try {
+                const result = await generateHuggingFaceImage(message);
+                
+                if (result === 'loading') {
+                    await ctx.editMessageText(
+                        `⏳ Model is loading...\nPlease try again in 2-3 minutes.`,
+                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+                    );
+                } else if (result === 'timeout') {
+                    await ctx.editMessageText(
+                        `⏰ Image generation took too long.\nPlease try again with a simpler prompt.`,
+                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+                    );
+                } else if (result instanceof Buffer) {
+                    await ctx.replyWithPhoto(
+                        { source: result },
+                        { caption: `🎨 Generated: "${message}"` }
+                    );
+                    await ctx.deleteMessage(processingMsg.message_id);
+                } else {
+                    await ctx.editMessageText(
+                        `❌ Image generation failed. Try using simpler English prompts.`,
+                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+                    );
                 }
-            );
-            
-            // Keep only last 10 exchanges (20 messages)
-            if (session.conversationHistory.length > 20) {
-                session.conversationHistory.splice(0, session.conversationHistory.length - 20);
+            } catch (error) {
+                await ctx.reply(`❌ Error: ${error.message}`);
             }
+        } else {
+            // GEMINI AI CHAT MODE
+            const thinkingMsg = await ctx.reply(`💭 Rose is thinking... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
             
-            await ctx.telegram.editMessageText(
-                ctx.chat.id,
-                thinkingMsg.message_id,
-                null,
-                `👩‍💻 *Rose AI:*\n\n${answer}`,
-                { parse_mode: "Markdown" }
-            );
-        } catch (error) {
-            await ctx.reply(`❌ Error: ${error.message}`);
+            try {
+                const answer = await askGemini(message, session.conversationHistory);
+                
+                // Update conversation history with CORRECT Gemini format
+                session.conversationHistory.push(
+                    { 
+                        role: "user", 
+                        parts: [{ text: message }] 
+                    },
+                    { 
+                        role: "model", 
+                        parts: [{ text: answer }] 
+                    }
+                );
+                
+                // Keep only last 10 exchanges (20 messages)
+                if (session.conversationHistory.length > 20) {
+                    session.conversationHistory.splice(0, session.conversationHistory.length - 20);
+                }
+                
+                await ctx.telegram.editMessageText(
+                    ctx.chat.id,
+                    thinkingMsg.message_id,
+                    null,
+                    `👩‍💼 *Rose AI:*\n\n${answer}`,
+                    { parse_mode: "Markdown" }
+                );
+            } catch (error) {
+                await ctx.reply(`❌ Error: ${error.message}`);
+            }
         }
     }
-}));
+    // Group chat - respond to mentions and keywords
+    else if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+        const text = message.toLowerCase();
+        const botUsername = ctx.botInfo.username.toLowerCase();
+        const randomRose = ROSES[Math.floor(Math.random() * ROSES.length)];
+        
+        // Check if bot is mentioned
+        if (text.includes(`@${botUsername}`)) {
+            await ctx.reply(`${randomRose} Hello! I'm Rose Bot. Use me in private chat for AI features!`);
+            return;
+        }
+        
+        // Keywords for auto-reply in groups
+        const greetingKeywords = [
+            'good morning', 'good night', 'good evening', 'good afternoon',
+            'hello', 'hi', 'hey', 'morning', 'night',
+            'thank you', 'thanks', 'bye', 'goodbye',
+            'rose', 'rose bot', 'i love you', 'love you',
+            'ချစ်လား', 'အာဘွား'
+        ];
+        
+        // Check if message contains any greeting keywords
+        const containsKeyword = greetingKeywords.some(keyword => 
+            text.includes(keyword)
+        );
+        
+        if (containsKeyword) {
+            // Auto-reply based on the keyword
+            if (text.includes('good morning')) {
+                await ctx.reply(`🌅 Good morning! ${randomRose}`);
+            } else if (text.includes('good night')) {
+                await ctx.reply(`🌙 Good night! ${randomRose}`);
+            } else if (text.includes('good evening')) {
+                await ctx.reply(`🌆 Good evening! ${randomRose}`);
+            } else if (text.includes('good afternoon')) {
+                await ctx.reply(`☀️ Good afternoon! ${randomRose}`);
+            } else if (text.includes('thank')) {
+                await ctx.reply(`${randomRose} You're welcome!`);
+            } else if (text.includes('bye') || text.includes('goodbye')) {
+                await ctx.reply(`👋 Goodbye! ${randomRose}`);
+            } else if (text.includes('hello') || text.includes('hi') || text.includes('hey')) {
+                await ctx.reply(`${randomRose} Hello!`);
+            } else if (text.includes('i love you') || text.includes('love you')) {
+                await ctx.reply(`💗 Love you too! ${randomRose}`);
+            } else if (text.includes('ချစ်လား')) {
+                await ctx.reply(`ချစ်တယ် 💗 ${randomRose}`);
+            } else if (text.includes('အာဘွား')) {
+                await ctx.reply(`အာဘွားပါရှင့် 😘 ${randomRose}`);
+            } else {
+                // General response for other rose-related keywords
+                await ctx.reply(`${randomRose} Hi there!`);
+            }
+        }
+        // Otherwise, do nothing in groups for regular messages
+    }
+});
 
 // ==================== ADMIN COMMANDS ====================
 bot.command('mute', adminRequired(async (ctx) => {
@@ -388,7 +453,7 @@ bot.command('warn', adminRequired(async (ctx) => {
 app.get('/', (req, res) => {
     res.json({
         status: '🌹 Rose AI & Admin Bot - Active',
-        features: ['AI Chat (Female)', 'Image Generation', 'Group Moderation'],
+        features: ['AI Chat (Mature Lady)', 'Image Generation', 'Group Moderation'],
         timestamp: new Date().toISOString()
     });
 });
@@ -421,7 +486,7 @@ const startBot = async (retryCount = 0) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
-    console.log(`🤖 Gemini: ${GEMINI_API_KEY ? '✅ gemini-2.0-flash (Female Personality)' : '❌'}`);
+    console.log(`🤖 Gemini: ${GEMINI_API_KEY ? '✅ gemini-2.0-flash (Mature Lady Personality)' : '❌'}`);
     console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ stabilityai/stable-diffusion-xl-base-1.0' : '❌'}`);
     
     startBot();
