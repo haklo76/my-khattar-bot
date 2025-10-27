@@ -298,20 +298,29 @@ bot.catch((err, ctx) => {
     console.error(`Bot error for ${ctx.updateType}:`, err);
 });
 
-// ==================== START SERVER ====================
+// ==================== START SERVER WITH RETRY ====================
+const startBot = async (retryCount = 0) => {
+    try {
+        await bot.launch();
+        console.log('✅ Bot is now running!');
+    } catch (error) {
+        if (error.response?.error_code === 409 && retryCount < 5) {
+            console.log(`🔄 Another instance running, retrying in 10s... (${retryCount + 1}/5)`);
+            setTimeout(() => startBot(retryCount + 1), 10000);
+        } else {
+            console.error('❌ Bot failed to start:', error.message);
+            process.exit(1);
+        }
+    }
+};
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
     console.log(`🤖 Gemini: ✅ gemini-2.0-flash`);
     console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅' : '❌'}`);
     
-    // Simple polling - no webhook configuration
-    bot.launch().then(() => {
-        console.log('✅ Bot is now running with polling!');
-    }).catch(error => {
-        console.error('❌ Bot failed to start:', error);
-        process.exit(1);
-    });
+    startBot();
 });
 
 // Keep the bot running
