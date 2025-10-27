@@ -94,49 +94,50 @@ async function askGemini(question) {
 }
 
 // ==================== HUGGING FACE IMAGE GENERATION ====================
-async function generateHuggingFaceImage(prompt, retryCount = 0) {
+async function generateHuggingFaceImage(prompt) {
     if (!HUGGINGFACE_API_KEY) {
         return null;
     }
 
     try {
         console.log('🖼️ Generating image with Hugging Face...');
-        const response = await axios.post(
-            'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
-            { 
+        
+        // Hugging Face Inference Providers API - NEW ENDPOINT
+        const response = await axios({
+            method: 'POST',
+            url: 'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
+            data: { 
                 inputs: prompt,
-                options: {
-                    wait_for_model: true,
-                    use_cache: true
+                parameters: {
+                    num_inference_steps: 20,
+                    guidance_scale: 7.5
                 }
             },
-            {
-                headers: {
-                    'Authorization': `Bearer ${HUGGINGFACE_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                responseType: 'arraybuffer',
-                timeout: 120000
-            }
-        );
+            headers: {
+                'Authorization': `Bearer ${HUGGINGFACE_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Accept': 'image/png'
+            },
+            responseType: 'arraybuffer',
+            timeout: 120000
+        });
 
         console.log('✅ Image generated successfully');
         return Buffer.from(response.data);
         
     } catch (error) {
-        console.error('Hugging Face Error:', error.response?.status, error.response?.data || error.message);
+        console.error('Hugging Face Error:', error.response?.status, error.response?.data?.toString() || error.message);
         
-        // Model loading - retry after 30 seconds
-        if (error.response?.status === 503 && retryCount < 3) {
-            console.log(`🔄 Model loading, retrying in 30s... (${retryCount + 1}/3)`);
-            await new Promise(resolve => setTimeout(resolve, 30000));
-            return generateHuggingFaceImage(prompt, retryCount + 1);
+        // Model loading error - retry after delay
+        if (error.response?.status === 503) {
+            console.log('🔄 Model is loading...');
+            return 'loading';
         }
         
-        // 404 error - wrong endpoint or model
-        if (error.response?.status === 404) {
-            console.log('❌ 404 Error - Model not found');
-            return 'model_error';
+        // API endpoint or authentication error
+        if (error.response?.status === 404 || error.response?.status === 401) {
+            console.log('❌ API endpoint or authentication error');
+            return 'api_error';
         }
         
         return null;
@@ -209,9 +210,14 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
     try {
         const result = await generateHuggingFaceImage(prompt);
         
-        if (result === 'model_error') {
+        if (result === 'loading') {
             await ctx.editMessageText(
-                `❌ Model configuration error. Please contact the bot administrator.`,
+                `⏳ Model is loading...\nPlease try again in 2-3 minutes.`,
+                { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+            );
+        } else if (result === 'api_error') {
+            await ctx.editMessageText(
+                `❌ API configuration error.\nPlease check Hugging Face API settings.`,
                 { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
             );
         } else if (result instanceof Buffer) {
@@ -344,8 +350,8 @@ const startBot = async (retryCount = 0) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
-    console.log(`🤖 Gemini: ✅ gemini-2.0-flash`);
-    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ stabilityai/stable-diffusion-xl-base-1.0' : '❌'}`);
+    console.log(`🤖 Gemini: ${GEMINI_API_KEY ? '✅ gemini-2.0-flash' : '❌'}`);
+    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ stabilityai/stable-diffusion-xl-base-1.0 (NEW API)' : '❌'}`);
     
     startBot();
 });
