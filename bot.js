@@ -23,27 +23,6 @@ console.log('🚀 Starting Rose AI Bot...');
 const bot = new Telegraf(BOT_TOKEN);
 const ROSES = ["🌹", "💐", "🌸", "💮", "🏵️", "🌺", "🌷", "🥀"];
 
-// ==================== CHECK AVAILABLE MODELS ====================
-async function checkGeminiModels() {
-    if (!GEMINI_API_KEY) {
-        console.log('❌ No Gemini API Key to check models');
-        return;
-    }
-    
-    try {
-        const response = await axios.get(
-            `https://generativelanguage.googleapis.com/v1/models?key=${GEMINI_API_KEY}`
-        );
-        
-        console.log('🔍 Available Gemini Models:');
-        response.data.models.forEach(model => {
-            console.log(`- ${model.name} (${model.supportedGenerationMethods?.join(', ') || 'no methods'})`);
-        });
-    } catch (error) {
-        console.error('❌ Failed to fetch models:', error.message);
-    }
-}
-
 // ==================== AUTH SYSTEM ====================
 function isAuthorizedAIUser(ctx) {
     return ctx.chat.type === 'private' && ctx.from.id.toString() === AUTHORIZED_USER_ID;
@@ -93,42 +72,21 @@ async function askGemini(question) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
-        // Try different model combinations
-        const models = [
-            'models/gemini-1.5-pro',
-            'models/gemini-pro', 
-            'models/gemini-1.0-pro',
-            'models/text-bison-001'
-        ];
-        
-        let lastError = '';
-        
-        for (const model of models) {
-            try {
-                console.log(`Trying model: ${model}`);
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1/${model}:generateContent?key=${GEMINI_API_KEY}`,
-                    {
-                        contents: [{
-                            parts: [{ text: `မြန်မာလိုရင်းနှီးစွာ ဖြေပါ: ${question}` }]
-                        }]
-                    },
-                    {
-                        headers: { 'Content-Type': 'application/json' },
-                        timeout: 30000
-                    }
-                );
-
-                return response.data.candidates[0].content.parts[0].text;
-                
-            } catch (error) {
-                lastError = error.response?.data?.error?.message || error.message;
-                console.log(`❌ ${model} failed: ${lastError}`);
-                continue;
+        // Use the available model from the debug output
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                contents: [{
+                    parts: [{ text: `မြန်မာလိုရင်းနှီးစွာ ဖြေပါ: ${question}` }]
+                }]
+            },
+            {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 30000
             }
-        }
-        
-        return `❌ All models failed. Last error: ${lastError}`;
+        );
+
+        return response.data.candidates[0].content.parts[0].text;
         
     } catch (error) {
         console.error('Gemini Error:', error.response?.data || error.message);
@@ -139,12 +97,10 @@ async function askGemini(question) {
 // ==================== HUGGING FACE IMAGE GENERATION ====================
 async function generateHuggingFaceImage(prompt) {
     if (!HUGGINGFACE_API_KEY) {
-        console.log('❌ No Hugging Face API Key');
         return null;
     }
 
     try {
-        console.log('🖼️ Generating image with Hugging Face...');
         const response = await axios.post(
             'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
             { inputs: prompt },
@@ -158,10 +114,9 @@ async function generateHuggingFaceImage(prompt) {
             }
         );
 
-        console.log('✅ Image generated successfully');
         return Buffer.from(response.data);
     } catch (error) {
-        console.error('Hugging Face Error:', error.response?.status, error.response?.data || error.message);
+        console.error('Hugging Face Error:', error.response?.data || error.message);
         return null;
     }
 }
@@ -249,23 +204,125 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
     }
 }));
 
-// ... Admin commands remain the same ...
+// ==================== ADMIN COMMANDS ====================
+bot.command('mute', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user's message to mute them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    try {
+        const untilDate = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+        await ctx.restrictChatMember(user.id, {
+            can_send_messages: false,
+            until_date: untilDate
+        });
+        await ctx.reply(`🔇 Muted ${user.first_name} for 1 hour ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    } catch (error) {
+        await ctx.reply(`❌ Mute failed: ${error.message}`);
+    }
+}));
+
+bot.command('ban', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user's message to ban them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    try {
+        await ctx.banChatMember(user.id);
+        await ctx.reply(`🔨 Banned ${user.first_name} ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    } catch (error) {
+        await ctx.reply(`❌ Ban failed: ${error.message}`);
+    }
+}));
+
+bot.command('del', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a message to delete it.");
+        return;
+    }
+    
+    try {
+        await ctx.deleteMessage(ctx.message.reply_to_message.message_id);
+        // Don't send confirmation message to avoid spam
+    } catch (error) {
+        await ctx.reply(`❌ Delete failed: ${error.message}`);
+    }
+}));
+
+bot.command('warn', adminRequired(async (ctx) => {
+    if (!ctx.message.reply_to_message) {
+        await ctx.reply("❌ Reply to a user to warn them.");
+        return;
+    }
+    
+    const user = ctx.message.reply_to_message.from;
+    await ctx.reply(`⚠️ ${user.first_name}, please follow group rules! ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+}));
+
+// ==================== AUTO REPLIES ====================
+bot.on('text', async (ctx) => {
+    if (!ctx.message.text.startsWith('/')) {
+        const text = ctx.message.text.toLowerCase();
+        const randomRose = ROSES[Math.floor(Math.random() * ROSES.length)];
+        
+        if (text.includes('hello') || text.includes('hi')) {
+            await ctx.reply(`${randomRose} Hello!`);
+        } else if (text.includes('thank')) {
+            await ctx.reply(`${randomRose} You're welcome!`);
+        } else if (text.includes('good morning')) {
+            await ctx.reply(`🌅 Good morning! ${randomRose}`);
+        } else if (text.includes('good night')) {
+            await ctx.reply(`🌙 Good night! ${randomRose}`);
+        }
+    }
+});
+
+// ==================== WEB SERVER ====================
+app.get('/', (req, res) => {
+    res.json({
+        status: '🌹 Rose AI & Admin Bot - Active',
+        features: ['AI Chat', 'Image Generation', 'Group Moderation'],
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// ==================== ERROR HANDLING ====================
+bot.catch((err, ctx) => {
+    console.error(`Bot error for ${ctx.updateType}:`, err);
+});
 
 // ==================== START SERVER ====================
-app.listen(PORT, '0.0.0.0', async () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
-    console.log(`🤖 Gemini API Key: ${GEMINI_API_KEY ? '✅' : '❌'}`);
-    console.log(`🎨 Hugging Face API Key: ${HUGGINGFACE_API_KEY ? '✅' : '❌'}`);
+    console.log(`🤖 Gemini: ${GEMINI_API_KEY ? '✅ gemini-2.0-flash' : '❌'}`);
+    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅' : '❌'}`);
     
-    // Check available models
-    await checkGeminiModels();
-    
-    bot.launch().then(() => {
-        console.log('✅ Bot is now running!');
+    // Use webhook to avoid multiple instances conflict
+    bot.launch({ 
+        webhook: {
+            domain: process.env.KOYEB_APP_URL, // Koyeb provides this
+            port: PORT
+        }
+    }).then(() => {
+        console.log('✅ Bot is now running with webhook!');
     }).catch(error => {
         console.error('❌ Bot failed to start:', error);
-        process.exit(1);
+        // Try polling as fallback
+        bot.launch().then(() => {
+            console.log('✅ Bot is now running with polling!');
+        }).catch(pollingError => {
+            console.error('❌ Bot failed with polling too:', pollingError);
+            process.exit(1);
+        });
     });
 });
 
