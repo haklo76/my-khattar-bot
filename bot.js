@@ -100,22 +100,35 @@ async function generateHuggingFaceImage(prompt) {
     }
 
     try {
+        console.log('🖼️ Generating image with Hugging Face...');
         const response = await axios.post(
-            'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
-            { inputs: prompt },
+            'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
+            { 
+                inputs: prompt,
+                options: {
+                    wait_for_model: true,
+                    use_cache: true
+                }
+            },
             {
                 headers: {
                     'Authorization': `Bearer ${HUGGINGFACE_API_KEY}`,
                     'Content-Type': 'application/json'
                 },
                 responseType: 'arraybuffer',
-                timeout: 90000
+                timeout: 120000 // 2 minutes
             }
         );
 
+        console.log('✅ Image generated successfully');
         return Buffer.from(response.data);
     } catch (error) {
-        console.error('Hugging Face Error:', error.response?.data || error.message);
+        console.error('Hugging Face Error:', error.response?.status, error.response?.data || error.message);
+        
+        if (error.response?.status === 503) {
+            console.log('🔄 Model is loading...');
+            return 'loading';
+        }
         return null;
     }
 }
@@ -181,25 +194,30 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
         return;
     }
 
-    const processingMsg = await ctx.reply(`🖼️ Generating image... ${ROSES[Math.floor(Math.random() * ROSES.length)]}\nThis may take 30-60 seconds.`);
+    const processingMsg = await ctx.reply(`🖼️ Generating image... ${ROSES[Math.floor(Math.random() * ROSES.length)]}\nThis may take 1-2 minutes.`);
     
     try {
-        const imageBuffer = await generateHuggingFaceImage(prompt);
+        const result = await generateHuggingFaceImage(prompt);
         
-        if (imageBuffer) {
+        if (result === 'loading') {
+            await ctx.editMessageText(
+                `⏳ Model is loading...\nPlease try again in 2-3 minutes.`,
+                { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+            );
+        } else if (result instanceof Buffer) {
             await ctx.replyWithPhoto(
-                { source: imageBuffer },
+                { source: result },
                 { caption: `🎨 Generated: "${prompt}"` }
             );
             await ctx.deleteMessage(processingMsg.message_id);
         } else {
             await ctx.editMessageText(
-                `❌ Image generation failed. The model might be loading. Try again in 1 minute.`,
+                `❌ Image generation failed. Try using simpler English prompts.`,
                 { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
             );
         }
     } catch (error) {
-        await ctx.reply(`❌ Image generation error: ${error.message}`);
+        await ctx.reply(`❌ Error: ${error.message}`);
     }
 }));
 
@@ -212,7 +230,7 @@ bot.command('mute', adminRequired(async (ctx) => {
     
     const user = ctx.message.reply_to_message.from;
     try {
-        const untilDate = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+        const untilDate = Math.floor(Date.now() / 1000) + 3600;
         await ctx.restrictChatMember(user.id, {
             can_send_messages: false,
             until_date: untilDate
@@ -246,7 +264,6 @@ bot.command('del', adminRequired(async (ctx) => {
     
     try {
         await ctx.deleteMessage(ctx.message.reply_to_message.message_id);
-        // Don't send confirmation message to avoid spam
     } catch (error) {
         await ctx.reply(`❌ Delete failed: ${error.message}`);
     }
@@ -318,7 +335,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
     console.log(`🤖 Gemini: ✅ gemini-2.0-flash`);
-    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅' : '❌'}`);
+    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ stabilityai/stable-diffusion-2-1' : '❌'}`);
     
     startBot();
 });
