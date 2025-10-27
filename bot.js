@@ -75,25 +75,32 @@ async function askGemini(question, conversationHistory = []) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
-        // Female AI personality setup
-        const systemPrompt = `You are Rose, a friendly and helpful female AI assistant. You speak in a warm, kind, and feminine tone. 
-        Respond in Burmese language naturally and conversationally. Be empathetic, supportive, and use feminine expressions appropriately.`;
-        
-        const messages = [
-            {
-                parts: [{ text: systemPrompt }]
-            },
+        // Female AI personality setup - CORRECTED FORMAT
+        const systemInstruction = {
+            parts: [{ 
+                text: `You are Rose, a friendly and helpful female AI assistant. You speak in a warm, kind, and feminine tone. 
+                Respond in Burmese language naturally and conversationally. Be empathetic, supportive, and use feminine expressions appropriately.
+                Keep your responses concise and friendly.` 
+            }]
+        };
+
+        // Build messages in correct Gemini format
+        const contents = [
             ...conversationHistory,
             {
+                role: "user",
                 parts: [{ text: question }]
             }
         ];
 
+        const requestBody = {
+            contents: contents,
+            systemInstruction: systemInstruction
+        };
+
         const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-            {
-                contents: messages
-            },
+            requestBody,
             {
                 headers: { 'Content-Type': 'application/json' },
                 timeout: 30000
@@ -292,10 +299,16 @@ bot.on('text', aiAuthorizedRequired(async (ctx) => {
         try {
             const answer = await askGemini(message, session.conversationHistory);
             
-            // Update conversation history (keep last 10 messages to avoid token limits)
+            // Update conversation history with CORRECT Gemini format
             session.conversationHistory.push(
-                { role: 'user', parts: [{ text: message }] },
-                { role: 'model', parts: [{ text: answer }] }
+                { 
+                    role: "user", 
+                    parts: [{ text: message }] 
+                },
+                { 
+                    role: "model", 
+                    parts: [{ text: answer }] 
+                }
             );
             
             // Keep only last 10 exchanges (20 messages)
