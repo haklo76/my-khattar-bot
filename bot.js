@@ -18,7 +18,7 @@ if (!BOT_TOKEN || !AUTHORIZED_USER_ID) {
     process.exit(1);
 }
 
-console.log('🚀 Starting Rose AI Bot with Admin features...');
+console.log('🚀 Starting Rose AI Bot...');
 
 const bot = new Telegraf(BOT_TOKEN);
 const ROSES = ["🌹", "💐", "🌸", "💮", "🏵️", "🌺", "🌷", "🥀"];
@@ -73,7 +73,7 @@ async function askGemini(question) {
     
     try {
         const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
             {
                 contents: [{
                     parts: [{ text: `မြန်မာလိုရင်းနှီးစွာ ဖြေပါ: ${question}` }]
@@ -89,17 +89,19 @@ async function askGemini(question) {
         
     } catch (error) {
         console.error('Gemini Error:', error.response?.data || error.message);
-        return `❌ Error: ${error.response?.data?.error?.message || error.message}`;
+        return `❌ Error: ${error.response?.data?.error?.message || 'Try again later'}`;
     }
 }
 
 // ==================== HUGGING FACE IMAGE GENERATION ====================
 async function generateHuggingFaceImage(prompt) {
-    if (!HUGGINGFACE_API_KEY) return null;
+    if (!HUGGINGFACE_API_KEY) {
+        return null;
+    }
 
     try {
         const response = await axios.post(
-            'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
+            'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
             { inputs: prompt },
             {
                 headers: {
@@ -107,13 +109,13 @@ async function generateHuggingFaceImage(prompt) {
                     'Content-Type': 'application/json'
                 },
                 responseType: 'arraybuffer',
-                timeout: 60000
+                timeout: 90000 // 90 seconds for image generation
             }
         );
 
         return Buffer.from(response.data);
     } catch (error) {
-        console.error('Hugging Face Error:', error.message);
+        console.error('Hugging Face Error:', error.response?.data || error.message);
         return null;
     }
 }
@@ -128,7 +130,7 @@ ${randomRose} *Your Personal Rose AI & Admin Bot* ${randomRose}
 
 🤖 **AI Commands (Private Only):**
 /ai [question] - Ask me anything
-/hfimage [prompt] - Generate real image
+/img [prompt] - Generate real image
 
 🛡️ **Group Admin Commands:**
 /mute - Mute user (reply to user)
@@ -170,11 +172,16 @@ bot.command('ai', aiAuthorizedRequired(async (ctx) => {
     }
 }));
 
-bot.command('hfimage', aiAuthorizedRequired(async (ctx) => {
+bot.command('img', aiAuthorizedRequired(async (ctx) => {
     const prompt = ctx.message.text.split(' ').slice(1).join(' ');
-    if (!prompt) return await ctx.reply("🖼️ Usage: /hfimage [prompt]");
+    if (!prompt) return await ctx.reply("🖼️ Usage: /img [prompt]");
 
-    const processingMsg = await ctx.reply(`🖼️ Generating image... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+    if (!HUGGINGFACE_API_KEY) {
+        await ctx.reply("❌ Image generation is currently unavailable.");
+        return;
+    }
+
+    const processingMsg = await ctx.reply(`🖼️ Generating image... ${ROSES[Math.floor(Math.random() * ROSES.length)]}\nThis may take 30-60 seconds.`);
     
     try {
         const imageBuffer = await generateHuggingFaceImage(prompt);
@@ -187,12 +194,12 @@ bot.command('hfimage', aiAuthorizedRequired(async (ctx) => {
             await ctx.deleteMessage(processingMsg.message_id);
         } else {
             await ctx.editMessageText(
-                `❌ Image generation failed or API key not set.`,
+                `❌ Image generation failed. The model might be loading. Try again in 1 minute.`,
                 { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
             );
         }
     } catch (error) {
-        await ctx.reply(`❌ Error: ${error.message}`);
+        await ctx.reply(`❌ Image generation error: ${error.message}`);
     }
 }));
 
