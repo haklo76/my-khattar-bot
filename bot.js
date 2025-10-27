@@ -94,7 +94,7 @@ async function askGemini(question) {
 }
 
 // ==================== HUGGING FACE IMAGE GENERATION ====================
-async function generateHuggingFaceImage(prompt) {
+async function generateHuggingFaceImage(prompt, retryCount = 0) {
     if (!HUGGINGFACE_API_KEY) {
         return null;
     }
@@ -102,7 +102,7 @@ async function generateHuggingFaceImage(prompt) {
     try {
         console.log('🖼️ Generating image with Hugging Face...');
         const response = await axios.post(
-            'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
+            'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
             { 
                 inputs: prompt,
                 options: {
@@ -116,19 +116,29 @@ async function generateHuggingFaceImage(prompt) {
                     'Content-Type': 'application/json'
                 },
                 responseType: 'arraybuffer',
-                timeout: 120000 // 2 minutes
+                timeout: 120000
             }
         );
 
         console.log('✅ Image generated successfully');
         return Buffer.from(response.data);
+        
     } catch (error) {
         console.error('Hugging Face Error:', error.response?.status, error.response?.data || error.message);
         
-        if (error.response?.status === 503) {
-            console.log('🔄 Model is loading...');
-            return 'loading';
+        // Model loading - retry after 30 seconds
+        if (error.response?.status === 503 && retryCount < 3) {
+            console.log(`🔄 Model loading, retrying in 30s... (${retryCount + 1}/3)`);
+            await new Promise(resolve => setTimeout(resolve, 30000));
+            return generateHuggingFaceImage(prompt, retryCount + 1);
         }
+        
+        // 404 error - wrong endpoint or model
+        if (error.response?.status === 404) {
+            console.log('❌ 404 Error - Model not found');
+            return 'model_error';
+        }
+        
         return null;
     }
 }
@@ -199,9 +209,9 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
     try {
         const result = await generateHuggingFaceImage(prompt);
         
-        if (result === 'loading') {
+        if (result === 'model_error') {
             await ctx.editMessageText(
-                `⏳ Model is loading...\nPlease try again in 2-3 minutes.`,
+                `❌ Model configuration error. Please contact the bot administrator.`,
                 { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
             );
         } else if (result instanceof Buffer) {
@@ -335,7 +345,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌹 Bot starting on port ${PORT}`);
     console.log(`👤 Authorized User: ${AUTHORIZED_USER_ID}`);
     console.log(`🤖 Gemini: ✅ gemini-2.0-flash`);
-    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ stabilityai/stable-diffusion-2-1' : '❌'}`);
+    console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ stabilityai/stable-diffusion-xl-base-1.0' : '❌'}`);
     
     startBot();
 });
