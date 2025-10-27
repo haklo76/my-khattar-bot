@@ -1,4 +1,4 @@
-const { Telegraf, session } = require('telegraf'); // 'session' ကို ထည့်သွင်းပါ
+const { Telegraf, session } = require('telegraf'); 
 const express = require('express');
 const axios = require('axios');
 
@@ -10,7 +10,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
 
-// === IMPROVEMENT: ID တွေကို String အစား Number အဖြစ် သေချာပြောင်းပြီး သိမ်းဆည်းပါ ===
+// ID များကို Number အဖြစ် သိမ်းဆည်းခြင်း
 const AUTHORIZED_USER_IDS = process.env.AUTHORIZED_USER_ID
     ? process.env.AUTHORIZED_USER_ID.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id))
     : [];
@@ -28,16 +28,16 @@ console.log('🌹 Starting Rose AI Bot...');
 const bot = new Telegraf(BOT_TOKEN);
 const ROSES = ["🌹", "💐", "🌸", "💮", "🏵️", "🌺", "🌷", "🥀"];
 
-// === IMPROVEMENT: Chat History သိမ်းဖို့ Session Middleware ကို သုံးပါ ===
+// Chat History သိမ်းရန် Session Middleware
 bot.use(session({
     defaultSession: () => ({
-        history: [] // Gemini chat history အတွက်
+        history: [] // Gemini chat history
     })
 }));
 
 // ==================== AUTH ====================
 function isAuthorizedAIUser(ctx) {
-    // === IMPROVEMENT: Number type နဲ့ စစ်ဆေးပါ ===
+    // Number type နဲ့ စစ်ဆေးခြင်း
     return ctx.chat.type === 'private' && AUTHORIZED_USER_IDS.includes(ctx.from.id);
 }
 
@@ -76,19 +76,19 @@ function adminRequired(func) {
     };
 }
 
-// ==================== GEMINI AI (FIXED & IMPROVED) ====================
+// ==================== GEMINI AI (FIXED API VERSION & MODEL) ====================
 async function askGemini(question, history = []) {
     if (!GEMINI_API_KEY) {
         return { answer: "❌ Gemini API Key မရှိပါ။", history };
     }
 
-    // === FIX: Model name ကို 'gemini-1.5-flash-latest' လို့ ပြောင်းပါ ===
-    const MODEL_NAME = 'gemini-1.5-flash-latest';
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
+    // Stable v1 API နှင့် gemini-2.0-flash ကို သုံးပါ
+    const MODEL_NAME = 'gemini-2.0-flash';
+    const API_URL = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
     
     // မေးခွန်းအသစ်ကို history ထဲ ထည့်ပါ
     const newContents = [
-        ...history,
+        ...history, 
         { role: "user", parts: [{ text: question }] }
     ];
 
@@ -97,28 +97,19 @@ async function askGemini(question, history = []) {
             API_URL,
             {
                 contents: newContents,
-                systemInstruction: {
-                    parts: [{ text: "You are a helpful and friendly assistant. Always reply in Burmese (မြန်မာလို ရင်းနှီးစွာ ဖြေပါ)." }]
-                },
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-                ],
             },
             { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
         );
 
         const newAnswer = res.data.candidates?.[0]?.content?.parts?.[0]?.text || "🤖 No response.";
 
-        // History ကို update လုပ်ပါ
+        // History ကို update လုပ်ပြီး model ရဲ့ အဖြေကို ထည့်ပါ
         const updatedHistory = [
-            ...newContents, // User မေးခွန်း
-            { role: "model", parts: [{ text: newAnswer }] } // Bot အဖြေ
+            ...newContents,
+            { role: "model", parts: [{ text: newAnswer }] }
         ];
         
-        // History အရှည်ကြီး မဖြစ်သွားအောင် (ဥပမာ: နောက်ဆုံး စကား 20 ကြောင်း)
+        // History ကို စကား 20 ကြောင်းထိသာ ထားပါ
         if (updatedHistory.length > 20) {
             updatedHistory.splice(0, updatedHistory.length - 20);
         }
@@ -181,26 +172,27 @@ Add me to your group as admin 🌹`;
     await ctx.reply(msg, { parse_mode: "Markdown" });
 });
 
-// ==================== AI COMMANDS (IMPROVED) ====================
+// ==================== AI COMMANDS (FINAL FIX) ====================
 bot.command('ai', aiAuthorizedRequired(async (ctx) => {
-    const q = ctx.message.text.split(' ').slice(1).join(' ');
-    if (!q) return ctx.reply("🧠 Usage: /ai [question]");
+    const raw_q = ctx.message.text.split(' ').slice(1).join(' ');
+    if (!raw_q) return ctx.reply("🧠 Usage: /ai [question]");
 
-    // === IMPROVEMENT: Session ကနေ history ကို ယူသုံးပါ ===
+    // v1 API ကိုသုံးသောကြောင့် မြန်မာလိုဖြေရန် Instruction ကို မေးခွန်းထဲ ထည့်ပေးရမည်။
+    const q_with_instruction = `မြန်မာလို ရင်းနှီးစွာ ဖြေပါ: ${raw_q}`;
+
     const history = ctx.session.history || [];
     
     const msg = await ctx.reply(`🧠 Thinking...`);
-    await ctx.sendChatAction('typing'); // === IMPROVEMENT: 'typing' action ပြပါ ===
+    await ctx.sendChatAction('typing'); 
 
-    const { answer, history: newHistory } = await askGemini(q, history);
+    const { answer, history: newHistory } = await askGemini(q_with_instruction, history);
 
-    // === IMPROVEMENT: History အသစ်ကို session မှာ ပြန်သိမ်းပါ ===
     ctx.session.history = newHistory; 
 
     await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `🤖 *Answer:*\n\n${answer}`, { parse_mode: "Markdown" });
 }));
 
-// === IMPROVEMENT: AI history ရှင်းဖို့ command အသစ် ===
+// AI history ရှင်းဖို့ command
 bot.command('clear', aiAuthorizedRequired(async (ctx) => {
     ctx.session.history = [];
     await ctx.reply("✨ AI chat history cleared.");
@@ -211,7 +203,7 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
     if (!prompt) return ctx.reply("🖼️ Usage: /img [prompt]");
 
     const msg = await ctx.reply(`🎨 Generating image... This may take 1–2 minutes.`);
-    await ctx.sendChatAction('upload_photo'); // === IMPROVEMENT: 'upload_photo' action ပြပါ ===
+    await ctx.sendChatAction('upload_photo'); // 'upload_photo' action ပြပါ
     
     const result = await generateHuggingFaceImage(prompt);
 
@@ -235,7 +227,7 @@ bot.command('mute', adminRequired(async (ctx) => {
 
     const user = ctx.message.reply_to_message.from;
 
-    // === IMPROVEMENT: ကိုယ့်ကိုယ်ကို (သို့) Bot ကိုယ်တိုင်ကို mute မလုပ်မိအောင် စစ်ဆေးပါ ===
+    // ကိုယ့်ကိုယ်ကို (သို့) Bot ကိုယ်တိုင်ကို mute မလုပ်မိအောင် စစ်ဆေးပါ
     if (user.id === ctx.botInfo.id) return ctx.reply("❌ I cannot mute myself.");
     if (user.id === ctx.from.id) return ctx.reply("❌ You cannot mute yourself.");
     
@@ -253,7 +245,7 @@ bot.command('ban', adminRequired(async (ctx) => {
     if (!ctx.message.reply_to_message) return ctx.reply("❌ Reply to a user to ban.");
     const user = ctx.message.reply_to_message.from;
 
-    // === IMPROVEMENT: ကိုယ့်ကိုယ်ကို (သို့) Bot ကိုယ်တိုင်ကို ban မလုပ်မိအောင် စစ်ဆေးပါ ===
+    // ကိုယ့်ကိုယ်ကို (သို့) Bot ကိုယ်တိုင်ကို ban မလုပ်မိအောင် စစ်ဆေးပါ
     if (user.id === ctx.botInfo.id) return ctx.reply("❌ I cannot ban myself.");
     if (user.id === ctx.from.id) return ctx.reply("❌ You cannot ban yourself.");
 
@@ -274,7 +266,7 @@ bot.command('del', adminRequired(async (ctx) => {
 
 // ==================== AUTO REPLY ====================
 bot.on('text', async (ctx) => {
-    // === IMPROVEMENT: AI owner ဆိုရင် auto-reply မလုပ်ပါ ===
+    // AI owner ဆိုရင် auto-reply မလုပ်ပါ
     if (isAuthorizedAIUser(ctx)) return; 
     
     const t = ctx.message.text.toLowerCase();
@@ -292,7 +284,6 @@ app.get('/', (req, res) => {
     res.json({
         status: "✅ Rose AI Bot Active",
         owners: AUTHORIZED_USER_IDS,
-        // === IMPROVEMENT: Feature list ကို update လုပ်ပါ ===
         features: ["AI Chat (with Context)", "Image Generation", "Group Moderation"],
         timestamp: new Date().toISOString()
     });
