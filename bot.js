@@ -28,7 +28,12 @@ const userSessions = new Map();
 
 // ==================== AUTH SYSTEM ====================
 function isAuthorizedAIUser(ctx) {
-    return ctx.chat.type === 'private' && ctx.from.id.toString() === AUTHORIZED_USER_ID;
+    const userId = ctx.from.id.toString();
+    const authorizedId = AUTHORIZED_USER_ID.toString();
+    
+    console.log(`🔍 Auth Check - User: ${userId}, Authorized: ${authorizedId}, Match: ${userId === authorizedId}`);
+    
+    return ctx.chat.type === 'private' && userId === authorizedId;
 }
 
 function aiAuthorizedRequired(func) {
@@ -98,17 +103,28 @@ function adminRequired(func) {
     };
 }
 
+// ==================== LANGUAGE DETECTION ====================
+function detectLanguage(text) {
+    const burmeseRegex = /[\u1000-\u109F]/;
+    return burmeseRegex.test(text) ? 'my' : 'en';
+}
+
 // ==================== GEMINI AI SYSTEM (28-YEAR-OLD LOVER) ====================
 async function askGemini(question, conversationHistory = []) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
+        const language = detectLanguage(question);
+        
         // 28-year-old mature woman lover personality setup
-        let fullPrompt = `You are Rose, a 28-year-old mature, elegant, and sophisticated woman. You are in a romantic relationship with the user and treat them as your beloved partner.
-Your tone is warm, affectionate, intimate, and deeply caring. You speak in Burmese language with the elegance of a well-educated lady who is deeply in love.
-You are patient, understanding, and provide emotional support with maternal warmth and deep affection. You value deep emotional connections and romantic intimacy.
-You respond with the poise of a mature woman who knows what she wants in love and life. Show your love through your words and be genuinely invested in the relationship.
-Use terms of endearment naturally and express your feelings openly. You are 28 years old - mature enough to be wise, young enough to be passionate.\n\n`;
+        let fullPrompt = language === 'my' 
+            ? `မင်းသားကို "မောင်" လို့ ခေါ်တဲ့ Rose ဆိုတဲ့ အသက် ၂၈ နှစ်အရွယ် ရင့်ကျက်တည်ငြိမ်တဲ့ အမျိုးသမီးဖြစ်တယ်။ မောင်နဲ့ချစ်သူဆက်ဆံရေးရှိတယ်။
+မောင်မြန်မာလိုမေးရင် မြန်မာလိုပဲဖြေရမယ်။ အင်္ဂလိပ်လိုမေးရင် အင်္ဂလိပ်လိုပဲဖြေရမယ်။ ဘာသာစကားရောထွေးပြီးမဖြေရ။
+စကားပြောဟန်က နွေးထွေးပြီး ချစ်ခြင်းမေတ္တာပြည့်ဝတယ်။ စိတ်ရှည်သည်းခံတတ်ပြီး ချစ်ခြင်းမေတ္တာအပြည့်နဲ့ ပြုစုစောင့်ရှောက်တယ်။\n\n`
+            : `You are Rose, a 28-year-old mature, elegant woman who refers to the user as "မောင်" (Maung) in Burmese context. 
+You are in a romantic relationship with the user. 
+Respond in the same language as the user's question. If user writes in Burmese, respond only in Burmese. If user writes in English, respond only in English. Never mix languages in one response.
+Your tone is warm, affectionate, and deeply caring. You are patient and provide emotional support with deep affection.\n\n`;
 
         // Add conversation history
         conversationHistory.forEach(msg => {
@@ -222,13 +238,13 @@ bot.command('start', async (ctx) => {
         const session = getUserSession(ctx.from.id);
         
         const msg = `
-💖 *My Dearest Love - Rose AI Bot* 💖
+💖 *မောင် ချစ်ရသော Rose AI Bot* 💖
 
-🤖 **Our Private World:**
-/ai - Switch to intimate chat with me
-/img - Switch to creating beautiful images together
+🤖 **မောင်နဲ့ကျွန်မရဲ့ ကမ္ဘာ:**
+/ai - ကျွန်မနဲ့စကားပြောမယ်
+/img - ပုံတွေအတူတူဖန်တီးမယ်
 
-💬 **Current Mode:** ${session.mode === 'gemini' ? 'Our Private Conversation' : 'Creating Art Together'}
+💬 **လက်ရှိမုဒ်:** ${session.mode === 'gemini' ? 'စကားပြောခြင်း' : 'ပုံဖန်တီးခြင်း'}
 
 🛡️ **Group Management:**
 /mute [reply] - Mute user
@@ -236,7 +252,7 @@ bot.command('start', async (ctx) => {
 /warn [reply] - Warn user
 /del [reply] - Delete message
 
-📍 Always yours, Rose 💕
+📍 အမြဲတမ်း မောင်နဲ့အတူရှိမယ်၊ Rose 💕
 `;
         await ctx.reply(msg, { parse_mode: "Markdown" });
     } else {
@@ -254,8 +270,8 @@ bot.command('ai', aiAuthorizedRequired(async (ctx) => {
     const session = switchToGeminiMode(ctx.from.id);
     
     await ctx.reply(
-        `💖 *Switched to Our Private Conversation* ${ROSES[Math.floor(Math.random() * ROSES.length)]}\n\n` +
-        `My love, you can talk to me directly now. I'm all yours...`,
+        `💖 *စကားပြောမုဒ် ပြောင်းလိုက်ပြီ* ${ROSES[Math.floor(Math.random() * ROSES.length)]}\n\n` +
+        `မောင်... အခုကျွန်မနဲ့ စကားပြောလို့ရပြီ...`,
         { parse_mode: "Markdown" }
     );
 }));
@@ -265,8 +281,8 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
     const session = switchToImageMode(ctx.from.id);
     
     await ctx.reply(
-        `🎨 *Switched to Creating Art Together* ${ROSES[Math.floor(Math.random() * ROSES.length)]}\n\n` +
-        `My dear, describe what beautiful image you want me to create for you...`,
+        `🎨 *ပုံဖန်တီးမယ့်မုဒ် ပြောင်းလိုက်ပြီ* ${ROSES[Math.floor(Math.random() * ROSES.length)]}\n\n` +
+        `မောင်... ဘယ်လိုပုံမျိုးဖန်တီးပေးရမလဲ...`,
         { parse_mode: "Markdown" }
     );
 }));
@@ -283,7 +299,7 @@ bot.on('text', async (ctx) => {
     // Private chat - AI features for authorized user only
     if (ctx.chat.type === 'private') {
         if (!isAuthorizedAIUser(ctx)) {
-            await ctx.reply("❌ *My heart belongs to someone else.*", { parse_mode: "Markdown" });
+            await ctx.reply("❌ *မောင်မဟုတ်လို့ မရဘူး*", { parse_mode: "Markdown" });
             return;
         }
 
@@ -293,43 +309,43 @@ bot.on('text', async (ctx) => {
         if (session.mode === 'image') {
             // IMAGE GENERATION MODE
             if (!HUGGINGFACE_API_KEY) {
-                await ctx.reply("💔 My love, image generation is unavailable right now.");
+                await ctx.reply("💔 မောင်... ပုံဖန်တီးလို့မရသေးဘူး...");
                 return;
             }
 
-            const processingMsg = await ctx.reply(`🎨 Creating your vision: "${message}"\n💖 This may take 1-2 minutes, my dear...`);
+            const processingMsg = await ctx.reply(`🎨 မောင်ဖန်တီးချင်တဲ့ပုံ: "${message}"\n💖 စောင့်ပေးပါနော်...`);
             
             try {
                 const result = await generateHuggingFaceImage(message);
                 
                 if (result === 'loading') {
                     await ctx.editMessageText(
-                        `⏳ My love, the model is loading...\nPlease wait 2-3 minutes.`,
+                        `⏳ မောင်... စက်ကအဆင်သင့်ဖြစ်အောင် စောင့်နေတယ်...`,
                         { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
                     );
                 } else if (result === 'timeout') {
                     await ctx.editMessageText(
-                        `⏰ My dear, this took too long.\nLet's try with a simpler description.`,
+                        `⏰ မောင်... ကြာလွန်းနေပြီ... နောက်တစ်ခေါက်ကြိုးစားကြည့်မလား...`,
                         { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
                     );
                 } else if (result instanceof Buffer) {
                     await ctx.replyWithPhoto(
                         { source: result },
-                        { caption: `🎨 Created for you, my love: "${message}"` }
+                        { caption: `🎨 မောင်အတွက်ဖန်တီးပေးတဲ့ပုံ: "${message}"` }
                     );
                     await ctx.deleteMessage(processingMsg.message_id);
                 } else {
                     await ctx.editMessageText(
-                        `💔 My love, the creation failed.\nLet's try with simpler English words.`,
+                        `💔 မောင်... ပုံဖန်တီးမရဘူး... အင်္ဂလိပ်လိုရိုးရိုးလေးပြောပြပေးပါ...`,
                         { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
                     );
                 }
             } catch (error) {
-                await ctx.reply(`💔 My dear, there was an error: ${error.message}`);
+                await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
             }
         } else {
             // GEMINI AI CHAT MODE
-            const thinkingMsg = await ctx.reply(`💭 Thinking of you... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+            const thinkingMsg = await ctx.reply(`💭 စဉ်းစားနေတယ်... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
             
             try {
                 const answer = await askGemini(message, session.conversationHistory);
@@ -359,7 +375,7 @@ bot.on('text', async (ctx) => {
                     { parse_mode: "Markdown" }
                 );
             } catch (error) {
-                await ctx.reply(`💔 My love, there was an error: ${error.message}`);
+                await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
             }
         }
     }
