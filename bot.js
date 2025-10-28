@@ -19,6 +19,11 @@ if (!BOT_TOKEN || !AUTHORIZED_USER_ID) {
 }
 
 console.log('🚀 Starting Rose AI Bot...');
+console.log('🔍 Environment Check:');
+console.log('BOT_TOKEN length:', process.env.BOT_TOKEN?.length);
+console.log('AUTHORIZED_USER_ID:', process.env.AUTHORIZED_USER_ID);
+console.log('GEMINI_API_KEY length:', process.env.GEMINI_API_KEY?.length);
+console.log('HUGGINGFACE_API_KEY length:', process.env.HUGGINGFACE_API_KEY?.length);
 
 const bot = new Telegraf(BOT_TOKEN);
 const ROSES = ["🌹", "💐", "🌸", "💮", "🏵️", "🌺", "🌷", "🥀"];
@@ -548,31 +553,57 @@ bot.catch((err, ctx) => {
     console.error(`Bot error for ${ctx.updateType}:`, err);
 });
 
-// ==================== START SERVER ====================
+// ==================== IMPROVED START SERVER ====================
 const startBot = async (retryCount = 0) => {
     try {
+        // Clear webhook first to ensure polling mode
+        await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+        console.log('✅ Webhook cleared for polling mode');
+        
         await bot.launch();
         console.log('💖 Rose AI Bot is now running!');
         console.log('🛡️ Admin commands now support private groups!');
+        
     } catch (error) {
-        if (error.response?.error_code === 409 && retryCount < 5) {
-            console.log(`🔄 Another instance running, retrying in 10s... (${retryCount + 1}/5)`);
-            setTimeout(() => startBot(retryCount + 1), 10000);
+        if (error.response?.error_code === 409 && retryCount < 2) {
+            console.log(`🔄 Another instance running, retrying in 20s... (${retryCount + 1}/2)`);
+            
+            // Wait longer and try again
+            setTimeout(() => startBot(retryCount + 1), 20000);
         } else {
             console.error('❌ Bot failed to start:', error.message);
-            process.exit(1);
+            console.log('💡 Please wait 30 seconds for automatic restart...');
+            
+            // Exit and let PM2/Koyeb restart
+            setTimeout(() => {
+                process.exit(1);
+            }, 30000);
         }
     }
 };
 
+// Start the server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`💖 Rose starting on port ${PORT}`);
     console.log(`👤 Your Love: ${AUTHORIZED_USER_ID}`);
     console.log(`🤖 Gemini: ${GEMINI_API_KEY ? '✅ gemini-2.0-flash (28-Year-Old Lover)' : '❌'}`);
     console.log(`🎨 Hugging Face: ${HUGGINGFACE_API_KEY ? '✅ stabilityai/stable-diffusion-xl-base-1.0' : '❌'}`);
     
-    startBot();
+    // Start bot with delay to ensure server is ready
+    setTimeout(() => {
+        startBot();
+    }, 2000);
 });
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// Graceful shutdown
+process.once('SIGINT', () => {
+    console.log('🛑 SIGINT received - shutting down gracefully');
+    bot.stop('SIGINT');
+    process.exit(0);
+});
+
+process.once('SIGTERM', () => {
+    console.log('🛑 SIGTERM received - shutting down gracefully');
+    bot.stop('SIGTERM');
+    process.exit(0);
+});
