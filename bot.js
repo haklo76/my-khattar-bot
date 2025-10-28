@@ -46,17 +46,27 @@ function aiAuthorizedRequired(func) {
     };
 }
 
-// ==================== ADMIN SYSTEM - WITH OWNER SUPPORT ====================
+// ==================== ADMIN SYSTEM - PRIVATE GROUP SUPPORT ====================
 async function isAdmin(ctx) {
     try {
+        // In private groups, we need to check if user is admin differently
         if (ctx.chat.type === 'private') return false;
         
-        // Check if user is the owner (AUTHORIZED_USER_ID)
+        // Check if user is the owner (AUTHORIZED_USER_ID) - ALWAYS has admin rights
         if (ctx.from.id.toString() === AUTHORIZED_USER_ID) {
             console.log(`🔍 User ${ctx.from.id} is the OWNER`);
             return true;
         }
         
+        // For private groups, we need to use getChatAdministrators
+        if (ctx.chat.type === 'group') {
+            const admins = await ctx.telegram.getChatAdministrators(ctx.chat.id);
+            const userIsAdmin = admins.some(admin => admin.user.id === ctx.from.id);
+            console.log(`🔍 Private Group Admin Check - User: ${ctx.from.id}, Is Admin: ${userIsAdmin}`);
+            return userIsAdmin;
+        }
+        
+        // For supergroups, use standard method
         const member = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
         console.log(`🔍 Admin Check - User: ${ctx.from.id}, Status: ${member.status}`);
         return member.status === "administrator" || member.status === "creator";
@@ -66,9 +76,32 @@ async function isAdmin(ctx) {
     }
 }
 
+async function isBotAdmin(ctx) {
+    try {
+        if (ctx.chat.type === 'private') return false;
+        
+        // For private groups
+        if (ctx.chat.type === 'group') {
+            const admins = await ctx.telegram.getChatAdministrators(ctx.chat.id);
+            const botIsAdmin = admins.some(admin => admin.user.id === ctx.botInfo.id);
+            console.log(`🔍 Bot Admin in Private Group: ${botIsAdmin}`);
+            return botIsAdmin;
+        }
+        
+        // For supergroups
+        const botMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.botInfo.id);
+        const botIsAdmin = botMember.status === "administrator" || botMember.status === "creator";
+        console.log(`🔍 Bot is admin: ${botIsAdmin}`);
+        return botIsAdmin;
+    } catch (error) {
+        console.error('❌ Bot admin check error:', error);
+        return false;
+    }
+}
+
 function adminRequired(func) {
     return async (ctx) => {
-        // Only work in groups
+        // Only work in groups (both private and supergroups)
         if (ctx.chat.type === "private") {
             await ctx.reply("❌ This command only works in groups.");
             return;
@@ -85,8 +118,7 @@ function adminRequired(func) {
         
         // Check if bot is admin in the group
         try {
-            const botMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.botInfo.id);
-            const botIsAdmin = botMember.status === "administrator" || botMember.status === "creator";
+            const botIsAdmin = await isBotAdmin(ctx);
             console.log(`🔍 Bot is admin: ${botIsAdmin}`);
             
             if (!botIsAdmin) {
@@ -109,14 +141,13 @@ function detectLanguage(text) {
     return burmeseRegex.test(text) ? 'my' : 'en';
 }
 
-// ==================== GEMINI AI SYSTEM (28-YEAR-OLD LOVER) ====================
+// ==================== GEMINI AI SYSTEM ====================
 async function askGemini(question, conversationHistory = []) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
     
     try {
         const language = detectLanguage(question);
         
-        // 28-year-old mature woman lover personality setup
         let fullPrompt = language === 'my' 
             ? `မင်းသားကို "မောင်" လို့ ခေါ်တဲ့ Rose ဆိုတဲ့ အသက် ၂၈ နှစ်အရွယ် ရင့်ကျက်တည်ငြိမ်တဲ့ အမျိုးသမီးဖြစ်တယ်။ မောင်နဲ့ချစ်သူဆက်ဆံရေးရှိတယ်။
 မောင်မြန်မာလိုမေးရင် မြန်မာလိုပဲဖြေရမယ်။ အင်္ဂလိပ်လိုမေးရင် အင်္ဂလိပ်လိုပဲဖြေရမယ်။ ဘာသာစကားရောထွေးပြီးမဖြေရ။
@@ -211,7 +242,7 @@ async function generateHuggingFaceImage(prompt) {
 function getUserSession(userId) {
     if (!userSessions.has(userId)) {
         userSessions.set(userId, {
-            mode: 'gemini', // Default mode is Gemini
+            mode: 'gemini',
             conversationHistory: []
         });
     }
@@ -287,156 +318,7 @@ bot.command('img', aiAuthorizedRequired(async (ctx) => {
     );
 }));
 
-// ==================== AUTO RESPONSE BASED ON CURRENT MODE ====================
-bot.on('text', async (ctx) => {
-    const message = ctx.message.text;
-    
-    // Skip if it's a command
-    if (message.startsWith('/')) {
-        return;
-    }
-
-    // Private chat - AI features for authorized user only
-    if (ctx.chat.type === 'private') {
-        if (!isAuthorizedAIUser(ctx)) {
-            await ctx.reply("❌ *မောင်မဟုတ်လို့ မရဘူး*", { parse_mode: "Markdown" });
-            return;
-        }
-
-        const userId = ctx.from.id;
-        const session = getUserSession(userId);
-        
-        if (session.mode === 'image') {
-            // IMAGE GENERATION MODE
-            if (!HUGGINGFACE_API_KEY) {
-                await ctx.reply("💔 မောင်... ပုံဖန်တီးလို့မရသေးဘူး...");
-                return;
-            }
-
-            const processingMsg = await ctx.reply(`🎨 မောင်ဖန်တီးချင်တဲ့ပုံ: "${message}"\n💖 စောင့်ပေးပါနော်...`);
-            
-            try {
-                const result = await generateHuggingFaceImage(message);
-                
-                if (result === 'loading') {
-                    await ctx.editMessageText(
-                        `⏳ မောင်... စက်ကအဆင်သင့်ဖြစ်အောင် စောင့်နေတယ်...`,
-                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                    );
-                } else if (result === 'timeout') {
-                    await ctx.editMessageText(
-                        `⏰ မောင်... ကြာလွန်းနေပြီ... နောက်တစ်ခေါက်ကြိုးစားကြည့်မလား...`,
-                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                    );
-                } else if (result instanceof Buffer) {
-                    await ctx.replyWithPhoto(
-                        { source: result },
-                        { caption: `🎨 မောင်အတွက်ဖန်တီးပေးတဲ့ပုံ: "${message}"` }
-                    );
-                    await ctx.deleteMessage(processingMsg.message_id);
-                } else {
-                    await ctx.editMessageText(
-                        `💔 မောင်... ပုံဖန်တီးမရဘူး... အင်္ဂလိပ်လိုရိုးရိုးလေးပြောပြပေးပါ...`,
-                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                    );
-                }
-            } catch (error) {
-                await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
-            }
-        } else {
-            // GEMINI AI CHAT MODE
-            const thinkingMsg = await ctx.reply(`💭 စဉ်းစားနေတယ်... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
-            
-            try {
-                const answer = await askGemini(message, session.conversationHistory);
-                
-                // Update conversation history with CORRECT Gemini format
-                session.conversationHistory.push(
-                    { 
-                        role: "user", 
-                        parts: [{ text: message }] 
-                    },
-                    { 
-                        role: "model", 
-                        parts: [{ text: answer }] 
-                    }
-                );
-                
-                // Keep only last 10 exchanges (20 messages)
-                if (session.conversationHistory.length > 20) {
-                    session.conversationHistory.splice(0, session.conversationHistory.length - 20);
-                }
-                
-                await ctx.telegram.editMessageText(
-                    ctx.chat.id,
-                    thinkingMsg.message_id,
-                    null,
-                    `💖 *Rose:*\n\n${answer}`,
-                    { parse_mode: "Markdown" }
-                );
-            } catch (error) {
-                await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
-            }
-        }
-    }
-    // Group chat - respond to mentions and keywords
-    else if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
-        const text = message.toLowerCase();
-        const botUsername = ctx.botInfo.username.toLowerCase();
-        const randomRose = ROSES[Math.floor(Math.random() * ROSES.length)];
-        
-        // Check if bot is mentioned
-        if (text.includes(`@${botUsername}`)) {
-            await ctx.reply(`💖 Hello! I'm Rose. My heart belongs to my special someone.`);
-            return;
-        }
-        
-        // Keywords for auto-reply in groups
-        const greetingKeywords = [
-            'good morning', 'good night', 'good evening', 'good afternoon',
-            'hello', 'hi', 'hey', 'morning', 'night',
-            'thank you', 'thanks', 'bye', 'goodbye',
-            'rose', 'rose bot', 'i love you', 'love you',
-            'ချစ်လား', 'အာဘွား'
-        ];
-        
-        // Check if message contains any greeting keywords
-        const containsKeyword = greetingKeywords.some(keyword => 
-            text.includes(keyword)
-        );
-        
-        if (containsKeyword) {
-            // Auto-reply based on the keyword
-            if (text.includes('good morning')) {
-                await ctx.reply(`🌅 Good morning! ${randomRose}`);
-            } else if (text.includes('good night')) {
-                await ctx.reply(`🌙 Good night! ${randomRose}`);
-            } else if (text.includes('good evening')) {
-                await ctx.reply(`🌆 Good evening! ${randomRose}`);
-            } else if (text.includes('good afternoon')) {
-                await ctx.reply(`☀️ Good afternoon! ${randomRose}`);
-            } else if (text.includes('thank')) {
-                await ctx.reply(`${randomRose} You're welcome!`);
-            } else if (text.includes('bye') || text.includes('goodbye')) {
-                await ctx.reply(`👋 Goodbye! ${randomRose}`);
-            } else if (text.includes('hello') || text.includes('hi') || text.includes('hey')) {
-                await ctx.reply(`${randomRose} Hello!`);
-            } else if (text.includes('i love you') || text.includes('love you')) {
-                await ctx.reply(`💗 Love you too! ${randomRose}`);
-            } else if (text.includes('ချစ်လား')) {
-                await ctx.reply(`ချစ်တယ် 💗 ${randomRose}`);
-            } else if (text.includes('အာဘွား')) {
-                await ctx.reply(`အာဘွားပါရှင့် 😘 ${randomRose}`);
-            } else {
-                // General response for other rose-related keywords
-                await ctx.reply(`${randomRose} Hi there!`);
-            }
-        }
-        // Otherwise, do nothing in groups for regular messages
-    }
-});
-
-// ==================== ADMIN COMMANDS ====================
+// ==================== ADMIN COMMANDS FOR PRIVATE GROUPS ====================
 bot.command('mute', adminRequired(async (ctx) => {
     if (!ctx.message.reply_to_message) {
         await ctx.reply("❌ Reply to a user's message to mute them.");
@@ -507,6 +389,147 @@ bot.command('warn', adminRequired(async (ctx) => {
     await ctx.reply(`⚠️ ${user.first_name}, please follow group rules! ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
 }));
 
+// ==================== AUTO RESPONSE ====================
+bot.on('text', async (ctx) => {
+    const message = ctx.message.text;
+    
+    // Skip if it's a command
+    if (message.startsWith('/')) {
+        return;
+    }
+
+    // Private chat - AI features for authorized user only
+    if (ctx.chat.type === 'private') {
+        if (!isAuthorizedAIUser(ctx)) {
+            await ctx.reply("❌ *မောင်မဟုတ်လို့ မရဘူး*", { parse_mode: "Markdown" });
+            return;
+        }
+
+        const userId = ctx.from.id;
+        const session = getUserSession(userId);
+        
+        if (session.mode === 'image') {
+            // IMAGE GENERATION MODE
+            if (!HUGGINGFACE_API_KEY) {
+                await ctx.reply("💔 မောင်... ပုံဖန်တီးလို့မရသေးဘူး...");
+                return;
+            }
+
+            const processingMsg = await ctx.reply(`🎨 မောင်ဖန်တီးချင်တဲ့ပုံ: "${message}"\n💖 စောင့်ပေးပါနော်...`);
+            
+            try {
+                const result = await generateHuggingFaceImage(message);
+                
+                if (result === 'loading') {
+                    await ctx.editMessageText(
+                        `⏳ မောင်... စက်ကအဆင်သင့်ဖြစ်အောင် စောင့်နေတယ်...`,
+                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+                    );
+                } else if (result === 'timeout') {
+                    await ctx.editMessageText(
+                        `⏰ မောင်... ကြာလွန်းနေပြီ... နောက်တစ်ခေါက်ကြိုးစားကြည့်မလား...`,
+                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+                    );
+                } else if (result instanceof Buffer) {
+                    await ctx.replyWithPhoto(
+                        { source: result },
+                        { caption: `🎨 မောင်အတွက်ဖန်တီးပေးတဲ့ပုံ: "${message}"` }
+                    );
+                    await ctx.deleteMessage(processingMsg.message_id);
+                } else {
+                    await ctx.editMessageText(
+                        `💔 မောင်... ပုံဖန်တီးမရဘူး... အင်္ဂလိပ်လိုရိုးရိုးလေးပြောပြပေးပါ...`,
+                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
+                    );
+                }
+            } catch (error) {
+                await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
+            }
+        } else {
+            // GEMINI AI CHAT MODE
+            const thinkingMsg = await ctx.reply(`💭 စဉ်းစားနေတယ်... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
+            
+            try {
+                const answer = await askGemini(message, session.conversationHistory);
+                
+                session.conversationHistory.push(
+                    { 
+                        role: "user", 
+                        parts: [{ text: message }] 
+                    },
+                    { 
+                        role: "model", 
+                        parts: [{ text: answer }] 
+                    }
+                );
+                
+                if (session.conversationHistory.length > 20) {
+                    session.conversationHistory.splice(0, session.conversationHistory.length - 20);
+                }
+                
+                await ctx.telegram.editMessageText(
+                    ctx.chat.id,
+                    thinkingMsg.message_id,
+                    null,
+                    `💖 *Rose:*\n\n${answer}`,
+                    { parse_mode: "Markdown" }
+                );
+            } catch (error) {
+                await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
+            }
+        }
+    }
+    // Group chat - respond to mentions and keywords
+    else if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+        const text = message.toLowerCase();
+        const botUsername = ctx.botInfo.username.toLowerCase();
+        const randomRose = ROSES[Math.floor(Math.random() * ROSES.length)];
+        
+        if (text.includes(`@${botUsername}`)) {
+            await ctx.reply(`💖 Hello! I'm Rose. My heart belongs to my special someone.`);
+            return;
+        }
+        
+        const greetingKeywords = [
+            'good morning', 'good night', 'good evening', 'good afternoon',
+            'hello', 'hi', 'hey', 'morning', 'night',
+            'thank you', 'thanks', 'bye', 'goodbye',
+            'rose', 'rose bot', 'i love you', 'love you',
+            'ချစ်လား', 'အာဘွား'
+        ];
+        
+        const containsKeyword = greetingKeywords.some(keyword => 
+            text.includes(keyword)
+        );
+        
+        if (containsKeyword) {
+            if (text.includes('good morning')) {
+                await ctx.reply(`🌅 Good morning! ${randomRose}`);
+            } else if (text.includes('good night')) {
+                await ctx.reply(`🌙 Good night! ${randomRose}`);
+            } else if (text.includes('good evening')) {
+                await ctx.reply(`🌆 Good evening! ${randomRose}`);
+            } else if (text.includes('good afternoon')) {
+                await ctx.reply(`☀️ Good afternoon! ${randomRose}`);
+            } else if (text.includes('thank')) {
+                await ctx.reply(`${randomRose} You're welcome!`);
+            } else if (text.includes('bye') || text.includes('goodbye')) {
+                await ctx.reply(`👋 Goodbye! ${randomRose}`);
+            } else if (text.includes('hello') || text.includes('hi') || text.includes('hey')) {
+                await ctx.reply(`${randomRose} Hello!`);
+            } else if (text.includes('i love you') || text.includes('love you')) {
+                await ctx.reply(`💗 Love you too! ${randomRose}`);
+            } else if (text.includes('ချစ်လား')) {
+                await ctx.reply(`ချစ်တယ် 💗 ${randomRose}`);
+            } else if (text.includes('အာဘွား')) {
+                await ctx.reply(`အာဘွားပါရှင့် 😘 ${randomRose}`);
+            } else {
+                await ctx.reply(`${randomRose} Hi there!`);
+            }
+        }
+    }
+});
+
 // ==================== WEB SERVER ====================
 app.get('/', (req, res) => {
     res.json({
@@ -525,12 +548,12 @@ bot.catch((err, ctx) => {
     console.error(`Bot error for ${ctx.updateType}:`, err);
 });
 
-// ==================== START SERVER WITH RETRY ====================
+// ==================== START SERVER ====================
 const startBot = async (retryCount = 0) => {
     try {
         await bot.launch();
         console.log('💖 Rose AI Bot is now running!');
-        console.log('🛡️ Admin commands are active with owner support!');
+        console.log('🛡️ Admin commands now support private groups!');
     } catch (error) {
         if (error.response?.error_code === 409 && retryCount < 5) {
             console.log(`🔄 Another instance running, retrying in 10s... (${retryCount + 1}/5)`);
@@ -551,6 +574,5 @@ app.listen(PORT, '0.0.0.0', () => {
     startBot();
 });
 
-// Keep the bot running
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
