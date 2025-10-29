@@ -3,7 +3,7 @@ const {
     getUserSession, detectLanguage, GEMINI_API_KEY, HUGGINGFACE_API_KEY 
 } = require('./config');
 
-console.log('🤖 AI FEATURES - Loading on demand...');
+console.log('🤖 AI FEATURES - Loading...');
 
 // ==================== AI CORE FUNCTIONS ====================
 async function askGemini(question, conversationHistory = []) {
@@ -86,18 +86,23 @@ async function generateHuggingFaceImage(prompt) {
 function switchToGeminiMode(userId) {
     const session = getUserSession(userId);
     session.mode = 'gemini';
+    console.log(`🔁 Switched to GEMINI mode for user: ${userId}`);
     return session;
 }
 
 function switchToImageMode(userId) {
     const session = getUserSession(userId);
     session.mode = 'image';
+    console.log(`🔁 Switched to IMAGE mode for user: ${userId}`);
     return session;
 }
 
 // ==================== AI COMMANDS ====================
 bot.command('ai', async (ctx) => {
+    console.log(`🔹 AI command from: ${ctx.from.id} in ${ctx.chat.type}`);
+    
     if (!isAuthorizedAIUser(ctx)) {
+        console.log(`❌ Unauthorized AI access: ${ctx.from.id}`);
         await ctx.reply("❌ *This is a personal AI bot.*", { parse_mode: "Markdown" });
         return;
     }
@@ -112,7 +117,10 @@ bot.command('ai', async (ctx) => {
 });
 
 bot.command('img', async (ctx) => {
+    console.log(`🔹 IMG command from: ${ctx.from.id} in ${ctx.chat.type}`);
+    
     if (!isAuthorizedAIUser(ctx)) {
+        console.log(`❌ Unauthorized IMG access: ${ctx.from.id}`);
         await ctx.reply("❌ *This is a personal AI bot.*", { parse_mode: "Markdown" });
         return;
     }
@@ -137,16 +145,22 @@ bot.on('text', async (ctx) => {
 
     // Private chat - AI features for authorized user only
     if (ctx.chat.type === 'private') {
+        console.log(`🔹 Private message from: ${ctx.from.id} - "${message}"`);
+        
         if (!isAuthorizedAIUser(ctx)) {
+            console.log(`❌ Unauthorized private message: ${ctx.from.id}`);
             await ctx.reply("❌ *မောင်မဟုတ်လို့ မရဘူး*", { parse_mode: "Markdown" });
             return;
         }
 
         const userId = ctx.from.id;
         const session = getUserSession(userId);
+        console.log(`🔹 User ${userId} mode: ${session.mode}`);
         
         if (session.mode === 'image') {
             // IMAGE GENERATION MODE
+            console.log(`🎨 Image generation request: "${message}"`);
+            
             if (!HUGGINGFACE_API_KEY) {
                 await ctx.reply("💔 မောင်... ပုံဖန်တီးလို့မရသေးဘူး...");
                 return;
@@ -163,6 +177,7 @@ bot.on('text', async (ctx) => {
                         { caption: `🎨 မောင်အတွက်ဖန်တီးပေးတဲ့ပုံ: "${message}"` }
                     );
                     await ctx.deleteMessage(processingMsg.message_id);
+                    console.log('✅ Image sent successfully');
                 } else {
                     await ctx.editMessageText(
                         `💔 မောင်... ပုံဖန်တီးမရဘူး... နောက်တစ်ခေါက်ကြိုးစားကြည့်မလား...`,
@@ -170,14 +185,17 @@ bot.on('text', async (ctx) => {
                     );
                 }
             } catch (error) {
+                console.error('❌ Image generation error:', error);
                 await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
             }
         } else {
             // GEMINI AI CHAT MODE
+            console.log(`💭 AI chat request: "${message}"`);
             const thinkingMsg = await ctx.reply(`💭 စဉ်းစားနေတယ်... ${ROSES[Math.floor(Math.random() * ROSES.length)]}`);
             
             try {
                 const answer = await askGemini(message, session.conversationHistory);
+                console.log('✅ Gemini response received');
                 
                 // Update conversation history
                 session.conversationHistory.push(
@@ -197,11 +215,13 @@ bot.on('text', async (ctx) => {
                     `💖 *Rose:*\n\n${answer}`,
                     { parse_mode: "Markdown" }
                 );
+                console.log('✅ AI response sent');
             } catch (error) {
+                console.error('❌ AI chat error:', error);
                 await ctx.reply(`💔 မောင်... အမှားတစ်ခုဖြစ်နေတယ်: ${error.message}`);
             }
         }
     }
 });
 
-console.log('✅ AI Features loaded on-demand - READY FOR OWNER');
+console.log('✅ AI Features loaded successfully');
