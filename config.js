@@ -10,12 +10,12 @@ const AUTHORIZED_USER_ID = process.env.AUTHORIZED_USER_ID;
 const PORT = process.env.PORT || 8000;
 
 // Validate
-if (!BOT_TOKEN || !AUTHORIZED_USER_ID) {
-    console.error('❌ BOT_TOKEN and AUTHORIZED_USER_ID are required');
+if (!BOT_TOKEN) {
+    console.error('❌ BOT_TOKEN is required');
     process.exit(1);
 }
 
-console.log('🚀 Starting Rose AI Bot...');
+console.log('🚀 Config loaded successfully');
 
 // Single bot instance
 const bot = new Telegraf(BOT_TOKEN);
@@ -30,8 +30,8 @@ const userSessions = new Map();
 
 // Common functions
 function isAuthorizedAIUser(ctx) {
-    const userId = ctx.from.id.toString();
-    const authorizedId = AUTHORIZED_USER_ID.toString();
+    const userId = ctx.from?.id?.toString();
+    const authorizedId = AUTHORIZED_USER_ID?.toString();
     return ctx.chat.type === 'private' && userId === authorizedId;
 }
 
