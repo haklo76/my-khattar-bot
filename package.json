@@ -1,7 +1,7 @@
 {
   "name": "rose-ai-bot",
   "version": "1.0.0",
-  "description": "Rose AI Bot with AI features and group management",
+  "description": "Rose AI Bot - Admin First, AI On-Demand",
   "main": "main.js",
   "scripts": {
     "start": "node main.js",
