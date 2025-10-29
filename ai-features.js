@@ -3,6 +3,8 @@ const {
     getUserSession, detectLanguage, GEMINI_API_KEY, HUGGINGFACE_API_KEY 
 } = require('./config');
 
+console.log('🤖 AI FEATURES - Loading on demand...');
+
 // ==================== AI CORE FUNCTIONS ====================
 async function askGemini(question, conversationHistory = []) {
     if (!GEMINI_API_KEY) return "❌ Gemini API Key မတွေ့ရဘူးဗျ။";
@@ -62,39 +64,21 @@ async function generateHuggingFaceImage(prompt) {
         
         const response = await axios({
             method: 'POST',
-            url: 'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
-            data: { 
-                inputs: prompt,
-                parameters: {
-                    num_inference_steps: 15,
-                    guidance_scale: 7.5
-                }
-            },
+            url: 'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
+            data: { inputs: prompt },
             headers: {
                 'Authorization': `Bearer ${HUGGINGFACE_API_KEY}`,
                 'Content-Type': 'application/json',
-                'Accept': 'image/png'
             },
             responseType: 'arraybuffer',
-            timeout: 90000
+            timeout: 60000
         });
 
         console.log('✅ Image generated successfully');
         return Buffer.from(response.data);
         
     } catch (error) {
-        console.error('Hugging Face Error:', error.response?.status, error.message);
-        
-        if (error.code === 'ECONNABORTED') {
-            console.log('⏰ Request timeout');
-            return 'timeout';
-        }
-        
-        if (error.response?.status === 503) {
-            console.log('🔄 Model is loading...');
-            return 'loading';
-        }
-        
+        console.error('Hugging Face Error:', error.message);
         return null;
     }
 }
@@ -146,7 +130,7 @@ bot.command('img', async (ctx) => {
 bot.on('text', async (ctx) => {
     const message = ctx.message.text;
     
-    // Skip if it's a command
+    // Skip commands
     if (message.startsWith('/')) {
         return;
     }
@@ -171,27 +155,17 @@ bot.on('text', async (ctx) => {
             const processingMsg = await ctx.reply(`🎨 မောင်ဖန်တီးချင်တဲ့ပုံ: "${message}"\n💖 စောင့်ပေးပါနော်...`);
             
             try {
-                const result = await generateHuggingFaceImage(message);
+                const imageBuffer = await generateHuggingFaceImage(message);
                 
-                if (result === 'loading') {
-                    await ctx.editMessageText(
-                        `⏳ မောင်... စက်ကအဆင်သင့်ဖြစ်အောင် စောင့်နေတယ်...`,
-                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                    );
-                } else if (result === 'timeout') {
-                    await ctx.editMessageText(
-                        `⏰ မောင်... ကြာလွန်းနေပြီ... နောက်တစ်ခေါက်ကြိုးစားကြည့်မလား...`,
-                        { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
-                    );
-                } else if (result instanceof Buffer) {
+                if (imageBuffer) {
                     await ctx.replyWithPhoto(
-                        { source: result },
+                        { source: imageBuffer },
                         { caption: `🎨 မောင်အတွက်ဖန်တီးပေးတဲ့ပုံ: "${message}"` }
                     );
                     await ctx.deleteMessage(processingMsg.message_id);
                 } else {
                     await ctx.editMessageText(
-                        `💔 မောင်... ပုံဖန်တီးမရဘူး... အင်္ဂလိပ်လိုရိုးရိုးလေးပြောပြပေးပါ...`,
+                        `💔 မောင်... ပုံဖန်တီးမရဘူး... နောက်တစ်ခေါက်ကြိုးစားကြည့်မလား...`,
                         { chat_id: ctx.chat.id, message_id: processingMsg.message_id }
                     );
                 }
@@ -205,19 +179,13 @@ bot.on('text', async (ctx) => {
             try {
                 const answer = await askGemini(message, session.conversationHistory);
                 
-                // Update conversation history with CORRECT Gemini format
+                // Update conversation history
                 session.conversationHistory.push(
-                    { 
-                        role: "user", 
-                        parts: [{ text: message }] 
-                    },
-                    { 
-                        role: "model", 
-                        parts: [{ text: answer }] 
-                    }
+                    { role: "user", parts: [{ text: message }] },
+                    { role: "model", parts: [{ text: answer }] }
                 );
                 
-                // Keep only last 10 exchanges (20 messages)
+                // Keep only last 10 exchanges
                 if (session.conversationHistory.length > 20) {
                     session.conversationHistory.splice(0, session.conversationHistory.length - 20);
                 }
@@ -236,4 +204,4 @@ bot.on('text', async (ctx) => {
     }
 });
 
-console.log('✅ AI Features loaded successfully');
+console.log('✅ AI Features loaded on-demand - READY FOR OWNER');
