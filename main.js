@@ -1,6 +1,6 @@
 const { bot, app, PORT, AUTHORIZED_USER_ID } = require('./config');
 
-console.log('=== 🚀 ROSE AI BOT - CONFLICT FREE ===');
+console.log('=== 🚀 ROSE AI BOT - POLLING MODE ===');
 console.log('AUTHORIZED_USER_ID:', AUTHORIZED_USER_ID);
 console.log('==============================');
 
@@ -16,53 +16,70 @@ bot.command('start', async (ctx) => {
 
 // Web server
 app.get('/', (req, res) => {
-    res.json({ 
-        status: 'Bot is running in web mode', 
-        instance: 'primary'
-    });
+    res.json({ status: 'Bot is running in POLLING mode' });
 });
 
-// HEALTH CHECK - Important for Koyeb
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'healthy' });
+    res.status(200).send('OK');
 });
 
-// ==================== CONFLICT SOLUTION ====================
-let botStarted = false;
-
-async function startBotSafely() {
-    if (botStarted) return;
+// ==================== POLLING MODE WITH CONFLICT HANDLING ====================
+async function startBotWithPolling() {
+    let attempts = 0;
+    const maxAttempts = 3;
     
-    try {
-        console.log('🔄 Starting bot in WEB mode...');
+    while (attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔄 Start attempt ${attempts}/${maxAttempts}...`);
         
-        // Use webhook instead of polling to avoid conflicts
-        const webhookUrl = `https://your-app-name.koyeb.app/webhook`;
-        await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-        await bot.telegram.setWebhook(webhookUrl);
-        
-        // Set up webhook endpoint
-        app.use(bot.webhookCallback('/webhook'));
-        
-        botStarted = true;
-        console.log('🎉 Bot started in WEBHOOK mode! NO CONFLICT!');
-        console.log('💖 All features READY!');
-        
-    } catch (error) {
-        console.log('❌ Webhook failed, using fallback...');
-        
-        // Fallback: Just keep the server running for health checks
-        botStarted = true;
-        console.log('💡 Server running (bot in standby)');
+        try {
+            // Clear any existing webhook
+            await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+            console.log('✅ Webhook cleared');
+            
+            // Wait before starting (avoid conflict)
+            const waitTime = attempts * 10000; // 10, 20, 30 seconds
+            console.log(`⏳ Waiting ${waitTime/1000} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            
+            // Start bot with polling
+            await bot.launch({
+                dropPendingUpdates: true,
+                allowedUpdates: ['message', 'callback_query']
+            });
+            
+            console.log('🎉 Bot STARTED in POLLING mode!');
+            console.log('💖 ALL FEATURES READY: AI + Group Management');
+            return; // Success - exit function
+            
+        } catch (error) {
+            if (error.response?.error_code === 409) {
+                console.log('💡 Conflict detected, will retry...');
+                if (attempts === maxAttempts) {
+                    console.log('🛑 Max attempts reached. Bot will stay alive for health checks.');
+                    break;
+                }
+            } else {
+                console.error('❌ Unexpected error:', error.message);
+                break;
+            }
+        }
     }
 }
 
-// Start server
+// Start server and bot
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 Server running on port ${PORT}`);
-    startBotSafely();
+    startBotWithPolling();
 });
 
-// Keep process alive
-process.on('SIGINT', () => console.log('🛑 SIGINT'));
-process.on('SIGTERM', () => console.log('🛑 SIGTERM'));
+// Keep process alive for Koyeb
+process.on('SIGINT', () => {
+    console.log('🛑 SIGINT - Keeping alive for Koyeb');
+});
+
+process.on('SIGTERM', () => {
+    console.log('🛑 SIGTERM - Keeping alive for Koyeb');
+});
+
+console.log('✅ Bot configured for POLLING mode');
